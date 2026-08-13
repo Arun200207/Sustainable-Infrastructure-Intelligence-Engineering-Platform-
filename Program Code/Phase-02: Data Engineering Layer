@@ -1,0 +1,231 @@
+import pandas as pd
+import numpy as np
+import os
+import gc
+resources = {
+
+    "electricity":"electricity.csv",
+
+    "chilledwater":"chilledwater.csv",
+
+    "hotwater":"hotwater.csv",
+
+    "gas":"gas.csv",
+
+    "steam":"steam.csv",
+
+    "water":"water.csv",
+
+    "irrigation":"irrigation.csv",
+
+    "solar":"solar.csv"
+
+}
+
+
+resources
+PROCESSED_PATH = DATA_PATH + "/processed"
+
+os.makedirs(
+    PROCESSED_PATH,
+    exist_ok=True
+)
+
+
+os.listdir(PROCESSED_PATH)
+def find_timestamp(df):
+
+    candidates=[
+        c for c in df.columns
+        if "timestamp" in c.lower()
+    ]
+
+    if len(candidates)==0:
+        raise Exception(
+            "No timestamp found"
+        )
+
+    return candidates[0]
+def process_resource(
+    resource_name,
+    filename
+):
+
+    print("\n===================")
+    print("Processing:",resource_name)
+
+
+    file_path=os.path.join(
+        DATA_PATH,
+        filename
+    )
+
+
+    # Load
+
+    df=pd.read_csv(
+        file_path
+    )
+
+
+    print(
+        "Original Shape:",
+        df.shape
+    )
+
+
+    # Timestamp
+
+    timestamp_col=find_timestamp(df)
+
+
+    df[timestamp_col]=pd.to_datetime(
+        df[timestamp_col]
+    )
+
+
+    # Wide -> Long
+
+    long_df=df.melt(
+
+        id_vars=[
+            timestamp_col
+        ],
+
+        var_name="building_id",
+
+        value_name=resource_name
+
+    )
+
+
+    # Numeric optimisation
+
+    long_df[resource_name]=pd.to_numeric(
+
+        long_df[resource_name],
+
+        errors="coerce",
+
+        downcast="float"
+
+    )
+
+
+    # Category compression
+
+    long_df["building_id"]=(
+        long_df["building_id"]
+        .astype("category")
+    )
+
+
+    # Save
+
+    output=os.path.join(
+
+        PROCESSED_PATH,
+
+        f"{resource_name}.parquet"
+
+    )
+
+
+    long_df.to_parquet(
+
+        output,
+
+        compression="snappy"
+
+    )
+
+
+    print(
+        "Processed:",
+        long_df.shape
+    )
+
+    print(
+        "Saved:",
+        output
+    )
+
+
+    # Cleanup
+
+    del df
+    del long_df
+
+    gc.collect()
+for resource,file in resources.items():
+
+    process_resource(
+        resource,
+        file
+    )
+os.listdir(PROCESSED_PATH)
+electricity = pd.read_parquet(
+
+    PROCESSED_PATH+
+    "/electricity.parquet"
+
+)
+
+
+electricity.head()
+electricity_daily=(
+
+    electricity
+
+    .assign(
+        date=
+        electricity.timestamp.dt.date
+    )
+
+    .groupby(
+        [
+            "date",
+            "building_id"
+        ]
+    )
+
+    ["electricity"]
+
+    .mean()
+
+    .reset_index()
+
+)
+electricity_daily.shape
+
+building_parts = (
+
+    electricity_daily
+    ["building_id"]
+    .astype(str)
+    .str.split(
+        "_",
+        n=2,
+        expand=True
+    )
+
+)
+
+
+electricity_daily["campus"] = building_parts[0]
+
+electricity_daily["building_type"] = building_parts[1]
+
+electricity_daily["building_name"] = building_parts[2]
+
+
+electricity_daily.to_parquet(
+
+    PROCESSED_PATH+
+    "/electricity_daily.parquet",
+
+    compression="snappy"
+
+)
+
+os.listdir(PROCESSED_PATH)
