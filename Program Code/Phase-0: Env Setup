@@ -1,0 +1,16 @@
+from google.colab import drive
+drive.mount('/content/drive')
+import os
+
+DATA_PATH="/content/drive/MyDrive/GitHub_Project_01"
+
+os.listdir(DATA_PATH)
+
+!pip install -q \
+xgboost \
+mlflow \
+plotly \
+streamlit \
+langchain \
+faiss-cpu \
+pyarrow
