@@ -1,0 +1,9063 @@
+# ================================================================
+# PHASE-07 : TIME SERIES FORECASTING ENGINE
+# PART-01A
+#
+# Load Project
+# Feature Store Loading
+# Environment Validation
+#
+# Sustainable Infrastructure Intelligence Platform
+# ================================================================
+
+
+# ================================================================
+# 1. Mount Google Drive
+# ================================================================
+
+from google.colab import drive
+
+drive.mount('/content/drive')
+
+
+# ================================================================
+# 2. Import Libraries
+# ================================================================
+
+import os
+import gc
+import warnings
+
+import pandas as pd
+import numpy as np
+
+from pathlib import Path
+
+warnings.filterwarnings("ignore")
+
+
+# ================================================================
+# 3. Project Configuration
+# ================================================================
+
+PROJECT_ROOT = Path(
+    "/content/drive/MyDrive/GitHub_Project_01"
+)
+
+
+PROCESSED_DIR = PROJECT_ROOT / "processed"
+
+FEATURE_STORE_DIR = (
+    PROCESSED_DIR /
+    "feature_store"
+)
+
+
+FORECAST_DIR = (
+    PROCESSED_DIR /
+    "forecasting"
+)
+
+
+REPORT_DIR = (
+    PROJECT_ROOT /
+    "reports" /
+    "forecasting"
+)
+
+
+MODEL_DIR = (
+    PROJECT_ROOT /
+    "models" /
+    "forecasting"
+)
+
+
+# Create required folders
+
+FORECAST_DIR.mkdir(
+    parents=True,
+    exist_ok=True
+)
+
+REPORT_DIR.mkdir(
+    parents=True,
+    exist_ok=True
+)
+
+MODEL_DIR.mkdir(
+    parents=True,
+    exist_ok=True
+)
+
+
+print("="*80)
+print("PROJECT CONFIGURATION")
+print("="*80)
+
+print("Project Root:")
+print(PROJECT_ROOT)
+
+print()
+
+print("Feature Store:")
+print(FEATURE_STORE_DIR)
+
+print()
+
+print("Forecast Output:")
+print(FORECAST_DIR)
+
+
+# ================================================================
+# 4. Validate Project Structure
+# ================================================================
+
+required_paths = [
+
+    PROJECT_ROOT,
+
+    FEATURE_STORE_DIR,
+
+    FEATURE_STORE_DIR /
+    "sustainable_feature_store.parquet"
+
+]
+
+
+print("\nChecking project artifacts...\n")
+
+
+for path in required_paths:
+
+    if path.exists():
+
+        print(
+            "FOUND:",
+            path
+        )
+
+    else:
+
+        raise FileNotFoundError(
+            f"Missing required artifact: {path}"
+        )
+
+
+print()
+
+print(
+    "Project validation completed successfully"
+)
+
+
+# ================================================================
+# 5. Load Feature Store
+# ================================================================
+
+
+FEATURE_FILE = (
+    FEATURE_STORE_DIR /
+    "sustainable_feature_store.parquet"
+)
+
+
+print("\nLoading Feature Store...")
+
+
+df = pd.read_parquet(
+    FEATURE_FILE
+)
+
+
+print(
+    "Feature Store Loaded Successfully"
+)
+
+
+# ================================================================
+# 6. Initial Dataset Information
+# ================================================================
+
+
+print("="*80)
+print("FEATURE STORE INFORMATION")
+print("="*80)
+
+
+print(
+    "Rows:",
+    df.shape[0]
+)
+
+
+print(
+    "Columns:",
+    df.shape[1]
+)
+
+
+print()
+
+
+print(
+    df.head()
+)
+
+
+
+# ================================================================
+# 7. Memory Optimization Check
+# ================================================================
+
+
+memory_usage = (
+    df.memory_usage(
+        deep=True
+    )
+    .sum()
+    /
+    (1024**3)
+)
+
+
+print()
+
+print(
+    f"Memory Usage: {memory_usage:.2f} GB"
+)
+
+
+
+# ================================================================
+# 8. Column Inspection
+# ================================================================
+
+
+print("\nAvailable Columns\n")
+
+
+for i,col in enumerate(df.columns):
+
+    print(
+        i+1,
+        col
+    )
+
+
+
+# ================================================================
+# 9. Basic Validation
+# ================================================================
+
+
+print("\nMissing Value Summary")
+
+
+missing = (
+    df.isnull()
+    .sum()
+    .sort_values(
+        ascending=False
+    )
+)
+
+
+print(
+    missing.head(20)
+)
+
+
+
+print("\nDuplicate Rows:")
+
+print(
+    df.duplicated()
+    .sum()
+)
+
+
+
+print("\nData Types")
+
+print(
+    df.dtypes
+)
+
+
+
+# ================================================================
+# 10. Save Initial Summary
+# ================================================================
+
+
+summary = pd.DataFrame({
+
+    "metric":[
+
+        "rows",
+        "columns",
+        "memory_gb",
+        "missing_values",
+        "duplicate_rows"
+
+    ],
+
+    "value":[
+
+        df.shape[0],
+        df.shape[1],
+        memory_usage,
+        df.isnull().sum().sum(),
+        df.duplicated().sum()
+
+    ]
+
+})
+
+
+summary_file = (
+    REPORT_DIR /
+    "forecast_data_summary.csv"
+)
+
+
+summary.to_csv(
+    summary_file,
+    index=False
+)
+
+
+print()
+
+print(
+    "Summary saved:"
+)
+
+print(
+    summary_file
+)
+
+
+# Cleanup
+
+gc.collect()
+
+
+print("\nPHASE-07 PART-01A COMPLETED")
+# ================================================================
+# PHASE-07 : TIME SERIES FORECASTING ENGINE
+# PART-01B
+#
+# Time-Series Preparation
+#
+# Sustainable Infrastructure Intelligence Platform
+# ================================================================
+
+
+# ================================================================
+# 1. Verify Dataset Loaded
+# ================================================================
+
+print("="*80)
+print("PHASE-07 PART-01B STARTED")
+print("="*80)
+
+
+if "df" not in globals():
+
+    raise Exception(
+        "Feature store dataframe not found. Run Part-01A first."
+    )
+
+
+print(
+    "Dataset Available"
+)
+
+print(
+    "Shape:",
+    df.shape
+)
+
+
+
+# ================================================================
+# 2. Inspect Date Related Columns
+# ================================================================
+
+
+print("\nSearching date columns...\n")
+
+
+date_candidates = [
+
+    col for col in df.columns
+
+    if (
+        "date" in col.lower()
+        or
+        "time" in col.lower()
+        or
+        "timestamp" in col.lower()
+        or
+        "year" in col.lower()
+        or
+        "month" in col.lower()
+        or
+        "day" in col.lower()
+    )
+
+]
+
+
+print(
+    date_candidates
+)
+
+
+
+# ================================================================
+# 3. Check Existing Date Structure
+# ================================================================
+
+
+for col in date_candidates:
+
+    print(
+        "\nColumn:",
+        col
+    )
+
+    print(
+        df[col].head()
+    )
+
+
+
+# ================================================================
+# 4. Create Datetime Column
+# ================================================================
+
+
+print("\nCreating datetime column...")
+
+
+# Case 1:
+# Existing timestamp/date column
+
+possible_date_columns = [
+
+    "timestamp",
+    "date",
+    "datetime"
+
+]
+
+
+existing_date = None
+
+
+for col in possible_date_columns:
+
+    if col in df.columns:
+
+        existing_date = col
+        break
+
+
+
+if existing_date:
+
+    print(
+        "Using existing date column:",
+        existing_date
+    )
+
+    df["datetime"] = pd.to_datetime(
+        df[existing_date]
+    )
+
+
+
+# Case 2:
+# Dataset contains year/month/day
+
+elif all(
+    x in df.columns
+    for x in [
+        "year",
+        "month",
+        "day"
+    ]
+):
+
+    print(
+        "Creating datetime from year/month/day"
+    )
+
+
+    df["datetime"] = pd.to_datetime(
+
+        dict(
+
+            year=df["year"],
+
+            month=df["month"],
+
+            day=df["day"]
+
+        )
+
+    )
+
+
+else:
+
+    raise Exception(
+        "No valid date information found"
+    )
+
+
+
+# ================================================================
+# 5. Validate Datetime
+# ================================================================
+
+
+print("\nDatetime Validation")
+
+
+print(
+    df["datetime"].head()
+)
+
+
+print()
+
+print(
+    "Minimum Date:",
+    df["datetime"].min()
+)
+
+
+print(
+    "Maximum Date:",
+    df["datetime"].max()
+)
+
+
+
+print()
+
+print(
+    "Missing Dates:"
+)
+
+print(
+    df["datetime"]
+    .isnull()
+    .sum()
+)
+
+
+
+# ================================================================
+# 6. Sort Time-Series
+# ================================================================
+
+
+print("\nSorting dataset chronologically...")
+
+
+df = (
+
+    df
+    .sort_values(
+        "datetime"
+    )
+    .reset_index(
+        drop=True
+    )
+
+)
+
+
+
+print(
+    "Sorting completed"
+)
+
+
+
+# ================================================================
+# 7. Identify Energy Target
+# ================================================================
+
+
+print("\nEnergy Columns Detection")
+
+
+energy_candidates = [
+
+    col for col in df.columns
+
+    if col.lower()
+    in [
+
+        "electricity",
+        "energy",
+        "energy_consumption"
+
+    ]
+
+]
+
+
+print(
+    energy_candidates
+)
+
+
+
+if "electricity" in df.columns:
+
+    TARGET_COLUMN = "electricity"
+
+
+elif "energy" in df.columns:
+
+    TARGET_COLUMN = "energy"
+
+
+else:
+
+    raise Exception(
+        "Electricity target column not found"
+    )
+
+
+print()
+
+print(
+    "Forecast Target:",
+    TARGET_COLUMN
+)
+
+
+
+# ================================================================
+# 8. Basic Energy Statistics
+# ================================================================
+
+
+print("\nEnergy Statistics")
+
+
+print(
+
+    df[TARGET_COLUMN]
+    .describe()
+
+)
+
+
+
+# ================================================================
+# 9. Detect Building Identifier
+# ================================================================
+
+
+print("\nSearching Building Identifier...")
+
+
+building_candidates = [
+
+    col for col in df.columns
+
+    if (
+
+        "building" in col.lower()
+        or
+        "site" in col.lower()
+        or
+        "id" in col.lower()
+
+    )
+
+]
+
+
+print(
+    building_candidates
+)
+
+
+
+if "building_id" in df.columns:
+
+    BUILDING_COLUMN = "building_id"
+
+
+elif "building" in df.columns:
+
+    BUILDING_COLUMN = "building"
+
+
+elif len(building_candidates) > 0:
+
+    BUILDING_COLUMN = building_candidates[0]
+
+
+else:
+
+    BUILDING_COLUMN = None
+
+
+
+print()
+
+print(
+    "Building Identifier:",
+    BUILDING_COLUMN
+)
+
+
+
+# ================================================================
+# 10. Create Daily Time-Series
+# ================================================================
+
+
+print("\nCreating daily energy time-series...")
+
+
+daily_energy = (
+
+    df
+
+    .set_index(
+        "datetime"
+    )
+
+    [TARGET_COLUMN]
+
+    .resample(
+        "D"
+    )
+
+    .sum()
+
+    .reset_index()
+
+)
+
+
+
+daily_energy.rename(
+
+    columns={
+
+        TARGET_COLUMN:
+        "daily_electricity"
+
+    },
+
+    inplace=True
+
+)
+
+
+
+print(
+    daily_energy.head()
+)
+
+
+print()
+
+print(
+    "Daily Records:",
+    len(daily_energy)
+)
+
+
+
+# ================================================================
+# 11. Create Building-Level Time-Series
+# ================================================================
+
+
+if BUILDING_COLUMN:
+
+
+    print(
+        "\nCreating building-level time-series..."
+    )
+
+
+    building_timeseries = (
+
+        df
+
+        .groupby(
+
+            [
+
+                BUILDING_COLUMN,
+
+                pd.Grouper(
+
+                    key="datetime",
+
+                    freq="D"
+
+                )
+
+            ]
+
+        )
+
+        [TARGET_COLUMN]
+
+        .sum()
+
+        .reset_index()
+
+    )
+
+
+    building_timeseries.rename(
+
+        columns={
+
+            TARGET_COLUMN:
+            "daily_electricity"
+
+        },
+
+        inplace=True
+
+    )
+
+
+    print(
+        building_timeseries.head()
+    )
+
+
+    print()
+
+    print(
+
+        "Building Time-Series Rows:",
+
+        len(building_timeseries)
+
+    )
+
+
+else:
+
+
+    print(
+        "Building information unavailable"
+    )
+
+
+    building_timeseries = None
+
+
+
+# ================================================================
+# 12. Create Campus-Level Time-Series
+# ================================================================
+
+
+print(
+    "\nCreating campus-level time-series..."
+)
+
+
+campus_timeseries = (
+
+    df
+
+    .groupby(
+
+        pd.Grouper(
+
+            key="datetime",
+
+            freq="D"
+
+        )
+
+    )
+
+    [TARGET_COLUMN]
+
+    .sum()
+
+    .reset_index()
+
+)
+
+
+
+campus_timeseries.rename(
+
+    columns={
+
+        TARGET_COLUMN:
+
+        "daily_electricity"
+
+    },
+
+    inplace=True
+
+)
+
+
+
+print(
+    campus_timeseries.head()
+)
+
+
+
+print()
+
+print(
+
+    "Campus Records:",
+
+    len(campus_timeseries)
+
+)
+
+
+
+# ================================================================
+# 13. Save Prepared Time-Series
+# ================================================================
+
+
+print("\nSaving forecasting datasets...")
+
+
+daily_file = (
+
+    FORECAST_DIR /
+
+    "forecast_dataset.parquet"
+
+)
+
+
+daily_energy.to_parquet(
+
+    daily_file,
+
+    index=False
+
+)
+
+
+
+campus_file = (
+
+    FORECAST_DIR /
+
+    "campus_timeseries.parquet"
+
+)
+
+
+campus_timeseries.to_parquet(
+
+    campus_file,
+
+    index=False
+
+)
+
+
+
+if building_timeseries is not None:
+
+
+    building_file = (
+
+        FORECAST_DIR /
+
+        "building_timeseries.parquet"
+
+    )
+
+
+    building_timeseries.to_parquet(
+
+        building_file,
+
+        index=False
+
+    )
+
+
+
+print()
+
+print(
+    "Saved Files:"
+)
+
+
+print(
+    daily_file
+)
+
+
+print(
+    campus_file
+)
+
+
+if building_timeseries is not None:
+
+    print(
+        building_file
+    )
+
+
+
+# ================================================================
+# 14. Final Status
+# ================================================================
+
+
+print("\n" + "="*80)
+
+print(
+    "PHASE-07 PART-01B COMPLETED SUCCESSFULLY"
+)
+
+print("="*80)
+
+
+# ================================================================
+# PHASE-07 : TIME SERIES FORECASTING ENGINE
+# PART-01C
+#
+# Forecast Dataset Validation
+# Time-Series Continuity Analysis
+#
+# Sustainable Infrastructure Intelligence Platform
+# ================================================================
+
+
+print("="*80)
+print("PHASE-07 PART-01C STARTED")
+print("="*80)
+
+
+
+# ================================================================
+# 1. Verify Forecast Files
+# ================================================================
+
+
+forecast_file = (
+    FORECAST_DIR /
+    "forecast_dataset.parquet"
+)
+
+
+campus_file = (
+    FORECAST_DIR /
+    "campus_timeseries.parquet"
+)
+
+
+building_file = (
+    FORECAST_DIR /
+    "building_timeseries.parquet"
+)
+
+
+
+required_files = [
+
+    forecast_file,
+    campus_file
+
+]
+
+
+print("\nChecking Forecast Artifacts\n")
+
+
+for file in required_files:
+
+    if file.exists():
+
+        print(
+            "FOUND:",
+            file
+        )
+
+    else:
+
+        raise FileNotFoundError(
+            f"Missing file: {file}"
+        )
+
+
+
+# ================================================================
+# 2. Load Forecast Datasets
+# ================================================================
+
+
+print("\nLoading datasets...")
+
+
+forecast_df = pd.read_parquet(
+    forecast_file
+)
+
+
+campus_df = pd.read_parquet(
+    campus_file
+)
+
+
+
+if building_file.exists():
+
+    building_df = pd.read_parquet(
+        building_file
+    )
+
+else:
+
+    building_df = None
+
+
+
+print()
+
+print(
+    "Forecast Dataset:",
+    forecast_df.shape
+)
+
+
+print(
+    "Campus Dataset:",
+    campus_df.shape
+)
+
+
+if building_df is not None:
+
+    print(
+        "Building Dataset:",
+        building_df.shape
+    )
+
+
+
+# ================================================================
+# 3. Datetime Validation
+# ================================================================
+
+
+print("\nDatetime Validation")
+
+
+datasets = {
+
+    "forecast": forecast_df,
+
+    "campus": campus_df
+
+}
+
+
+if building_df is not None:
+
+    datasets["building"] = building_df
+
+
+
+for name, data in datasets.items():
+
+
+    print()
+
+    print(
+        "Dataset:",
+        name
+    )
+
+
+    print(
+
+        "Date Type:",
+
+        data["datetime"].dtype
+
+    )
+
+
+    print(
+
+        "Start:",
+
+        data["datetime"].min()
+
+    )
+
+
+    print(
+
+        "End:",
+
+        data["datetime"].max()
+
+    )
+
+
+
+# ================================================================
+# 4. Duplicate Timestamp Detection
+# ================================================================
+
+
+print("\nDuplicate Timestamp Analysis")
+
+
+validation_results = []
+
+
+
+for name, data in datasets.items():
+
+
+    duplicate_count = (
+
+        data["datetime"]
+
+        .duplicated()
+
+        .sum()
+
+    )
+
+
+    validation_results.append(
+
+        {
+
+            "dataset":
+
+            name,
+
+
+            "rows":
+
+            len(data),
+
+
+            "duplicate_dates":
+
+            duplicate_count
+
+        }
+
+    )
+
+
+    print(
+
+        name,
+
+        "duplicates:",
+
+        duplicate_count
+
+    )
+
+
+
+# ================================================================
+# 5. Frequency Validation
+# ================================================================
+
+
+print("\nChecking Time Frequency")
+
+
+for name, data in datasets.items():
+
+
+    temp = data.copy()
+
+
+    temp = (
+
+        temp
+
+        .sort_values(
+            "datetime"
+        )
+
+    )
+
+
+    date_diff = (
+
+        temp["datetime"]
+
+        .diff()
+
+        .dropna()
+
+    )
+
+
+    print()
+
+    print(
+        name
+    )
+
+
+    print(
+
+        date_diff
+
+        .value_counts()
+
+        .head()
+
+    )
+
+
+
+# ================================================================
+# 6. Missing Date Detection
+# ================================================================
+
+
+print("\nMissing Date Analysis")
+
+
+missing_reports = []
+
+
+
+for name, data in datasets.items():
+
+
+    temp = (
+
+        data
+
+        .sort_values(
+            "datetime"
+        )
+
+    )
+
+
+    full_range = pd.date_range(
+
+        start=temp["datetime"].min(),
+
+        end=temp["datetime"].max(),
+
+        freq="D"
+
+    )
+
+
+    missing_dates = (
+
+        full_range
+
+        .difference(
+
+            temp["datetime"]
+
+        )
+
+    )
+
+
+    missing_count = len(
+        missing_dates
+    )
+
+
+    print()
+
+    print(
+        name
+    )
+
+
+    print(
+
+        "Expected Dates:",
+
+        len(full_range)
+
+    )
+
+
+    print(
+
+        "Missing Dates:",
+
+        missing_count
+
+    )
+
+
+    missing_reports.append(
+
+        {
+
+            "dataset":
+
+            name,
+
+
+            "expected_dates":
+
+            len(full_range),
+
+
+            "existing_dates":
+
+            len(temp),
+
+
+            "missing_dates":
+
+            missing_count
+
+        }
+
+    )
+
+
+
+# ================================================================
+# 7. Energy Value Validation
+# ================================================================
+
+
+print("\nEnergy Validation")
+
+
+energy_column = "daily_electricity"
+
+
+
+for name, data in datasets.items():
+
+
+    print()
+
+    print(
+        name
+    )
+
+
+    negative_values = (
+
+        data[energy_column]
+
+        < 0
+
+    ).sum()
+
+
+    zero_values = (
+
+        data[energy_column]
+
+        == 0
+
+    ).sum()
+
+
+
+    print(
+
+        "Negative Energy:",
+
+        negative_values
+
+    )
+
+
+    print(
+
+        "Zero Energy:",
+
+        zero_values
+
+    )
+
+
+
+# ================================================================
+# 8. Statistical Summary
+# ================================================================
+
+
+print("\nEnergy Statistics")
+
+
+for name, data in datasets.items():
+
+
+    print()
+
+    print(
+        name
+    )
+
+
+    print(
+
+        data[energy_column]
+
+        .describe()
+
+    )
+
+
+
+# ================================================================
+# 9. Energy Outlier Detection
+# ================================================================
+
+
+print("\nEnergy Outlier Detection")
+
+
+outlier_results = []
+
+
+
+for name, data in datasets.items():
+
+
+    q1 = (
+
+        data[energy_column]
+
+        .quantile(0.25)
+
+    )
+
+
+    q3 = (
+
+        data[energy_column]
+
+        .quantile(0.75)
+
+    )
+
+
+    iqr = q3 - q1
+
+
+    lower = q1 - (1.5 * iqr)
+
+
+    upper = q3 + (1.5 * iqr)
+
+
+    outliers = (
+
+        (data[energy_column] < lower)
+
+        |
+
+        (data[energy_column] > upper)
+
+    ).sum()
+
+
+
+    print()
+
+    print(
+        name
+    )
+
+
+    print(
+
+        "Outliers:",
+
+        outliers
+
+    )
+
+
+
+    outlier_results.append(
+
+        {
+
+            "dataset":
+
+            name,
+
+
+            "outliers":
+
+            outliers,
+
+
+            "lower_limit":
+
+            lower,
+
+
+            "upper_limit":
+
+            upper
+
+        }
+
+    )
+
+
+
+# ================================================================
+# 10. Save Validation Reports
+# ================================================================
+
+
+print("\nSaving Validation Reports")
+
+
+
+validation_df = pd.DataFrame(
+    validation_results
+)
+
+
+missing_df = pd.DataFrame(
+    missing_reports
+)
+
+
+outlier_df = pd.DataFrame(
+    outlier_results
+)
+
+
+
+validation_df.to_csv(
+
+    REPORT_DIR /
+
+    "timestamp_validation_report.csv",
+
+    index=False
+
+)
+
+
+
+missing_df.to_csv(
+
+    REPORT_DIR /
+
+    "missing_date_report.csv",
+
+    index=False
+
+)
+
+
+
+outlier_df.to_csv(
+
+    REPORT_DIR /
+
+    "energy_outlier_report.csv",
+
+    index=False
+
+)
+
+
+
+# ================================================================
+# 11. Final Summary
+# ================================================================
+
+
+print("\n" + "="*80)
+
+print(
+    "FORECAST DATA QUALITY SUMMARY"
+)
+
+print("="*80)
+
+
+
+print(
+
+    "Forecast Rows:",
+
+    len(forecast_df)
+
+)
+
+
+print(
+
+    "Forecast Date Range:",
+
+    forecast_df["datetime"].min(),
+
+    "to",
+
+    forecast_df["datetime"].max()
+
+)
+
+
+print(
+
+    "Validation Reports Saved"
+
+)
+
+
+
+print("\n" + "="*80)
+
+print(
+    "PHASE-07 PART-01C COMPLETED SUCCESSFULLY"
+)
+
+print("="*80)
+
+
+# ================================================================
+# PHASE-07 : TIME SERIES FORECASTING ENGINE
+# PART-01D
+#
+# Stationarity Testing
+# Seasonal Analysis
+# Forecast Dataset Finalization
+#
+# Sustainable Infrastructure Intelligence Platform
+# ================================================================
+
+
+print("="*80)
+print("PHASE-07 PART-01D STARTED")
+print("="*80)
+
+
+
+# ================================================================
+# 1. Import Additional Libraries
+# ================================================================
+
+
+from statsmodels.tsa.stattools import adfuller
+
+from statsmodels.tsa.seasonal import seasonal_decompose
+
+import matplotlib.pyplot as plt
+
+import seaborn as sns
+
+
+
+# ================================================================
+# 2. Verify Forecast Dataset
+# ================================================================
+
+
+if "campus_df" not in globals():
+
+    campus_df = pd.read_parquet(
+
+        FORECAST_DIR /
+
+        "campus_timeseries.parquet"
+
+    )
+
+
+print(
+    "Campus Dataset Loaded"
+)
+
+
+print(
+    campus_df.shape
+)
+
+
+
+# ================================================================
+# 3. Prepare Time Series Index
+# ================================================================
+
+
+ts_df = (
+
+    campus_df
+
+    .copy()
+
+)
+
+
+ts_df = (
+
+    ts_df
+
+    .sort_values(
+        "datetime"
+    )
+
+)
+
+
+
+ts_df = (
+
+    ts_df
+
+    .set_index(
+        "datetime"
+    )
+
+)
+
+
+
+energy_series = (
+
+    ts_df["daily_electricity"]
+
+)
+
+
+
+print()
+
+print(
+    energy_series.head()
+)
+
+
+
+# ================================================================
+# 4. Rolling Statistics
+# ================================================================
+
+
+print("\nCalculating Rolling Statistics...")
+
+
+rolling_window = 30
+
+
+rolling_mean = (
+
+    energy_series
+
+    .rolling(
+        rolling_window
+    )
+
+    .mean()
+
+)
+
+
+
+rolling_std = (
+
+    energy_series
+
+    .rolling(
+        rolling_window
+    )
+
+    .std()
+
+)
+
+
+
+rolling_report = pd.DataFrame(
+
+    {
+
+        "energy":
+
+        energy_series,
+
+
+        "rolling_mean_30":
+
+        rolling_mean,
+
+
+        "rolling_std_30":
+
+        rolling_std
+
+    }
+
+)
+
+
+
+rolling_report.head()
+
+
+
+# Save rolling statistics
+
+
+rolling_report.to_parquet(
+
+    FORECAST_DIR /
+
+    "rolling_statistics.parquet"
+
+)
+
+
+
+print(
+    "Rolling statistics saved"
+)
+
+
+
+# ================================================================
+# 5. Augmented Dickey Fuller Test
+# ================================================================
+
+
+print("\nRunning ADF Stationarity Test...")
+
+
+adf_result = adfuller(
+
+    energy_series.dropna()
+
+)
+
+
+
+adf_report = pd.DataFrame(
+
+    {
+
+        "Metric":
+
+        [
+
+            "ADF Statistic",
+
+            "p-value",
+
+            "Used Lags",
+
+            "Observations"
+
+        ],
+
+
+        "Value":
+
+        [
+
+            adf_result[0],
+
+            adf_result[1],
+
+            adf_result[2],
+
+            adf_result[3]
+
+        ]
+
+    }
+
+)
+
+
+
+print(
+    adf_report
+)
+
+
+
+# Interpretation
+
+
+if adf_result[1] <= 0.05:
+
+
+    stationarity_status = "Stationary"
+
+
+else:
+
+
+    stationarity_status = "Non-Stationary"
+
+
+
+print()
+
+print(
+    "Stationarity Status:",
+    stationarity_status
+)
+
+
+
+adf_report.to_csv(
+
+    REPORT_DIR /
+
+    "stationarity_report.csv",
+
+    index=False
+
+)
+
+
+
+# ================================================================
+# 6. Seasonal Decomposition
+# ================================================================
+
+
+print("\nPerforming Seasonal Decomposition...")
+
+
+# Daily energy:
+# yearly seasonality = 365
+
+
+decomposition = seasonal_decompose(
+
+    energy_series,
+
+    model="additive",
+
+    period=365,
+
+    extrapolate_trend="freq"
+
+)
+
+
+
+seasonal_df = pd.DataFrame(
+
+    {
+
+        "observed":
+
+        decomposition.observed,
+
+
+        "trend":
+
+        decomposition.trend,
+
+
+        "seasonal":
+
+        decomposition.seasonal,
+
+
+        "residual":
+
+        decomposition.resid
+
+    }
+
+)
+
+
+
+seasonal_df.to_parquet(
+
+    FORECAST_DIR /
+
+    "seasonal_decomposition.parquet"
+
+)
+
+
+
+print(
+    "Seasonal decomposition saved"
+)
+
+
+
+# ================================================================
+# 7. Visualization
+# ================================================================
+
+
+plt.figure(
+
+    figsize=(15,8)
+
+)
+
+
+plt.plot(
+
+    decomposition.trend,
+
+    label="Trend"
+
+)
+
+
+plt.plot(
+
+    decomposition.seasonal,
+
+    label="Seasonality"
+
+)
+
+
+
+plt.title(
+
+    "Energy Trend and Seasonal Pattern"
+
+)
+
+
+plt.legend()
+
+plt.grid()
+
+
+plt.show()
+
+
+
+# ================================================================
+# 8. Forecast Dataset Creation
+# ================================================================
+
+
+print("\nCreating Final Forecast Dataset...")
+
+
+forecast_ready = (
+
+    ts_df
+
+    .reset_index()
+
+)
+
+
+
+forecast_ready = (
+
+    forecast_ready
+
+    .rename(
+
+        columns={
+
+            "daily_electricity":
+
+            "target_energy"
+
+        }
+
+    )
+
+)
+
+
+
+print(
+    forecast_ready.head()
+)
+
+
+
+print()
+
+print(
+    forecast_ready.shape
+)
+
+
+
+# Save final dataset
+
+
+forecast_ready.to_parquet(
+
+    FORECAST_DIR /
+
+    "final_forecast_dataset.parquet",
+
+    index=False
+
+)
+
+
+
+# ================================================================
+# 9. Time-Based Train Validation Test Split
+# ================================================================
+
+
+print("\nCreating Time-Based Splits...")
+
+
+min_date = forecast_ready["datetime"].min()
+
+max_date = forecast_ready["datetime"].max()
+
+
+
+print(
+    "Dataset Range:"
+)
+
+print(
+    min_date,
+    "to",
+    max_date
+)
+
+
+
+# 70 / 15 / 15 split
+
+
+total_days = (
+
+    max_date -
+
+    min_date
+
+).days
+
+
+
+train_end = (
+
+    min_date
+
+    +
+
+    pd.Timedelta(
+
+        days=int(total_days*0.70)
+
+    )
+
+)
+
+
+
+validation_end = (
+
+    min_date
+
+    +
+
+    pd.Timedelta(
+
+        days=int(total_days*0.85)
+
+    )
+
+)
+
+
+
+train_df = forecast_ready[
+
+    forecast_ready["datetime"]
+
+    <= train_end
+
+]
+
+
+
+validation_df = forecast_ready[
+
+    (
+
+        forecast_ready["datetime"]
+
+        > train_end
+
+    )
+
+    &
+
+    (
+
+        forecast_ready["datetime"]
+
+        <= validation_end
+
+    )
+
+]
+
+
+
+test_df = forecast_ready[
+
+    forecast_ready["datetime"]
+
+    > validation_end
+
+]
+
+
+
+print()
+
+print(
+    "Training:",
+    train_df.shape
+)
+
+
+print(
+    "Validation:",
+    validation_df.shape
+)
+
+
+print(
+    "Testing:",
+    test_df.shape
+)
+
+
+
+# ================================================================
+# 10. Save Splits
+# ================================================================
+
+
+train_df.to_parquet(
+
+    FORECAST_DIR /
+
+    "forecasting_train.parquet",
+
+    index=False
+
+)
+
+
+
+validation_df.to_parquet(
+
+    FORECAST_DIR /
+
+    "forecasting_validation.parquet",
+
+    index=False
+
+)
+
+
+
+test_df.to_parquet(
+
+    FORECAST_DIR /
+
+    "forecasting_test.parquet",
+
+    index=False
+
+)
+
+
+
+# ================================================================
+# 11. Phase-07 Part-01 Summary
+# ================================================================
+
+
+summary = pd.DataFrame(
+
+    {
+
+        "Dataset":
+
+        [
+
+            "Train",
+
+            "Validation",
+
+            "Test"
+
+        ],
+
+
+        "Rows":
+
+        [
+
+            len(train_df),
+
+            len(validation_df),
+
+            len(test_df)
+
+        ],
+
+
+        "Start_Date":
+
+        [
+
+            train_df.datetime.min(),
+
+            validation_df.datetime.min(),
+
+            test_df.datetime.min()
+
+        ],
+
+
+        "End_Date":
+
+        [
+
+            train_df.datetime.max(),
+
+            validation_df.datetime.max(),
+
+            test_df.datetime.max()
+
+        ]
+
+    }
+
+)
+
+
+
+summary.to_csv(
+
+    REPORT_DIR /
+
+    "forecast_split_summary.csv",
+
+    index=False
+
+)
+
+
+
+# ================================================================
+# 12. Final Completion
+# ================================================================
+
+
+print("\n" + "="*80)
+
+print(
+    "PHASE-07 PART-01 COMPLETED SUCCESSFULLY"
+)
+
+print("="*80)
+
+
+print()
+
+print(
+    "Generated Forecast Artifacts:"
+)
+
+
+for file in FORECAST_DIR.iterdir():
+
+    print(
+        file.name
+    )
+
+
+print()
+
+print(
+    "Reports Generated:"
+)
+
+
+for file in REPORT_DIR.iterdir():
+
+    print(
+        file.name
+    )
+
+
+print()
+
+print(
+    "READY FOR PHASE-07 PART-02"
+)
+
+
+print(
+    "ARIMA FORECASTING ENGINE"
+)
+
+
+print("="*80)
+
+
+# ================================================================
+# PHASE-07 : TIME SERIES FORECASTING ENGINE
+# PART-02
+#
+# ARIMA Forecasting Engine
+#
+# Sustainable Infrastructure Intelligence Platform
+# ================================================================
+
+
+print("="*80)
+print("PHASE-07 PART-02 STARTED")
+print("ARIMA FORECASTING ENGINE")
+print("="*80)
+
+
+
+# ================================================================
+# 1. Import Libraries
+# ================================================================
+
+
+import os
+import pickle
+import warnings
+
+import pandas as pd
+import numpy as np
+
+
+from statsmodels.tsa.arima.model import ARIMA
+
+from statsmodels.tsa.stattools import adfuller
+
+
+from sklearn.metrics import (
+
+    mean_absolute_error,
+
+    mean_squared_error
+
+)
+
+
+warnings.filterwarnings("ignore")
+
+
+
+# ================================================================
+# 2. Verify Project Variables
+# ================================================================
+
+
+if "FORECAST_DIR" not in globals():
+
+    raise Exception(
+        "Run Phase-07 Part-01 first"
+    )
+
+
+print(
+    "Project paths loaded"
+)
+
+
+
+# ================================================================
+# 3. Load Forecast Datasets
+# ================================================================
+
+
+train_file = (
+
+    FORECAST_DIR /
+
+    "forecasting_train.parquet"
+
+)
+
+
+validation_file = (
+
+    FORECAST_DIR /
+
+    "forecasting_validation.parquet"
+
+)
+
+
+test_file = (
+
+    FORECAST_DIR /
+
+    "forecasting_test.parquet"
+
+)
+
+
+
+train_df = pd.read_parquet(
+
+    train_file
+
+)
+
+
+validation_df = pd.read_parquet(
+
+    validation_file
+
+)
+
+
+test_df = pd.read_parquet(
+
+    test_file
+
+)
+
+
+
+print()
+
+print(
+    "Training:",
+    train_df.shape
+)
+
+
+print(
+    "Validation:",
+    validation_df.shape
+)
+
+
+print(
+    "Testing:",
+    test_df.shape
+)
+
+
+
+# ================================================================
+# 4. Prepare ARIMA Series
+# ================================================================
+
+
+print("\nPreparing ARIMA data...")
+
+
+train_series = (
+
+    train_df
+
+    .set_index(
+
+        "datetime"
+
+    )
+
+    [
+
+        "target_energy"
+
+    ]
+
+)
+
+
+validation_series = (
+
+    validation_df
+
+    .set_index(
+
+        "datetime"
+
+    )
+
+    [
+
+        "target_energy"
+
+    ]
+
+)
+
+
+test_series = (
+
+    test_df
+
+    .set_index(
+
+        "datetime"
+
+    )
+
+    [
+
+        "target_energy"
+
+    ]
+
+)
+
+
+
+print(
+    train_series.head()
+)
+
+
+
+# ================================================================
+# 5. Stationarity Test
+# ================================================================
+
+
+print("\nRunning ADF Test...")
+
+
+adf_result = adfuller(
+
+    train_series
+
+)
+
+
+
+adf_pvalue = adf_result[1]
+
+
+print(
+
+    "ADF Statistic:",
+
+    adf_result[0]
+
+)
+
+
+print(
+
+    "P-Value:",
+
+    adf_pvalue
+
+)
+
+
+
+if adf_pvalue < 0.05:
+
+    print(
+        "Series is stationary"
+    )
+
+    d_value = 0
+
+
+else:
+
+    print(
+        "Series is non-stationary"
+    )
+
+    d_value = 1
+
+
+
+# ================================================================
+# 6. ARIMA Parameter Configuration
+# ================================================================
+
+
+print("\nARIMA Parameters")
+
+
+# Baseline ARIMA
+
+p = 2
+
+d = d_value
+
+q = 2
+
+
+
+arima_config = pd.DataFrame(
+
+    {
+
+        "parameter":
+
+        [
+
+            "p",
+
+            "d",
+
+            "q"
+
+        ],
+
+
+        "value":
+
+        [
+
+            p,
+
+            d,
+
+            q
+
+        ]
+
+    }
+
+)
+
+
+
+print(
+    arima_config
+)
+
+
+
+# Save parameters
+
+
+arima_config.to_csv(
+
+    REPORT_DIR /
+
+    "arima_parameters.csv",
+
+    index=False
+
+)
+
+
+
+# ================================================================
+# 7. Train ARIMA Model
+# ================================================================
+
+
+print("\nTraining ARIMA Model...")
+
+
+model = ARIMA(
+
+    train_series,
+
+    order=(p,d,q)
+
+)
+
+
+
+arima_model = model.fit()
+
+
+
+print(
+
+    arima_model.summary()
+
+)
+
+
+
+# ================================================================
+# 8. Validation Forecast
+# ================================================================
+
+
+print("\nGenerating Validation Forecast...")
+
+
+validation_forecast = (
+
+    arima_model
+
+    .forecast(
+
+        steps=len(validation_series)
+
+    )
+
+)
+
+
+
+validation_forecast = pd.Series(
+
+    validation_forecast,
+
+    index=validation_series.index
+
+)
+
+
+
+forecast_results = pd.DataFrame(
+
+    {
+
+        "datetime":
+
+        validation_series.index,
+
+
+        "actual":
+
+        validation_series.values,
+
+
+        "prediction":
+
+        validation_forecast.values
+
+    }
+
+)
+
+
+
+print(
+    forecast_results.head()
+)
+
+
+
+# Save forecast
+
+
+forecast_results.to_parquet(
+
+    FORECAST_DIR /
+
+    "arima_validation_forecast.parquet",
+
+    index=False
+
+)
+
+
+
+# ================================================================
+# 9. Model Evaluation
+# ================================================================
+
+
+print("\nARIMA Evaluation")
+
+
+mae = mean_absolute_error(
+
+    validation_series,
+
+    validation_forecast
+
+)
+
+
+
+rmse = np.sqrt(
+
+    mean_squared_error(
+
+        validation_series,
+
+        validation_forecast
+
+    )
+
+)
+
+
+
+mape = (
+
+    np.mean(
+
+        np.abs(
+
+            (
+
+                validation_series.values -
+
+                validation_forecast.values
+
+            )
+
+            /
+
+            validation_series.values
+
+        )
+
+    )
+
+    *
+
+    100
+
+)
+
+
+
+arima_results = pd.DataFrame(
+
+    {
+
+        "Model":
+
+        [
+
+            "ARIMA"
+
+        ],
+
+
+        "MAE":
+
+        [
+
+            mae
+
+        ],
+
+
+        "RMSE":
+
+        [
+
+            rmse
+
+        ],
+
+
+        "MAPE":
+
+        [
+
+            mape
+
+        ]
+
+    }
+
+)
+
+
+
+print(
+    arima_results
+)
+
+
+
+# Save results
+
+
+arima_results.to_csv(
+
+    REPORT_DIR /
+
+    "arima_results.csv",
+
+    index=False
+
+)
+
+
+
+# ================================================================
+# 10. Save ARIMA Model
+# ================================================================
+
+
+model_path = (
+
+    MODEL_DIR /
+
+    "arima_model.pkl"
+
+)
+
+
+
+with open(
+
+    model_path,
+
+    "wb"
+
+) as file:
+
+
+    pickle.dump(
+
+        arima_model,
+
+        file
+
+    )
+
+
+
+print()
+
+print(
+    "Model Saved:"
+)
+
+print(
+    model_path
+)
+
+
+
+# ================================================================
+# 11. Generate Test Forecast
+# ================================================================
+
+
+print("\nGenerating Test Forecast...")
+
+
+test_forecast = (
+
+    arima_model
+
+    .forecast(
+
+        steps=len(test_series)
+
+    )
+
+)
+
+
+
+test_forecast_df = pd.DataFrame(
+
+    {
+
+        "datetime":
+
+        test_series.index,
+
+
+        "actual":
+
+        test_series.values,
+
+
+        "prediction":
+
+        test_forecast.values
+
+    }
+
+)
+
+
+
+test_forecast_df.to_parquet(
+
+    FORECAST_DIR /
+
+    "arima_test_forecast.parquet",
+
+    index=False
+
+)
+
+
+
+# ================================================================
+# 12. Completion
+# ================================================================
+
+
+print("\n" + "="*80)
+
+print(
+    "PHASE-07 PART-02 COMPLETED"
+)
+
+print(
+    "ARIMA FORECASTING ENGINE READY"
+)
+
+print("="*80)
+
+
+# ================================================================
+# PHASE-07 : TIME SERIES FORECASTING ENGINE
+# PART-03
+#
+# Prophet Forecasting Engine
+#
+# Sustainable Infrastructure Intelligence Platform
+# ================================================================
+
+
+print("="*80)
+print("PHASE-07 PART-03 STARTED")
+print("PROPHET FORECASTING ENGINE")
+print("="*80)
+
+
+
+# ================================================================
+# 1. Install Prophet (Google Colab)
+# ================================================================
+
+
+!pip install prophet -q
+
+
+
+# ================================================================
+# 2. Import Libraries
+# ================================================================
+
+
+import os
+import pickle
+import warnings
+
+
+import pandas as pd
+import numpy as np
+
+
+from prophet import Prophet
+
+
+from sklearn.metrics import (
+
+    mean_absolute_error,
+
+    mean_squared_error
+
+)
+
+
+warnings.filterwarnings("ignore")
+
+
+
+# ================================================================
+# 3. Validate Project Paths
+# ================================================================
+
+
+if "FORECAST_DIR" not in globals():
+
+    raise Exception(
+        "Run Phase-07 Part-01 before continuing"
+    )
+
+
+print(
+    "Project paths verified"
+)
+
+
+
+# ================================================================
+# 4. Load Forecast Datasets
+# ================================================================
+
+
+train_file = (
+
+    FORECAST_DIR /
+
+    "forecasting_train.parquet"
+
+)
+
+
+validation_file = (
+
+    FORECAST_DIR /
+
+    "forecasting_validation.parquet"
+
+)
+
+
+test_file = (
+
+    FORECAST_DIR /
+
+    "forecasting_test.parquet"
+
+)
+
+
+
+train_df = pd.read_parquet(
+
+    train_file
+
+)
+
+
+validation_df = pd.read_parquet(
+
+    validation_file
+
+)
+
+
+test_df = pd.read_parquet(
+
+    test_file
+
+)
+
+
+
+print()
+
+print(
+    "Training:",
+    train_df.shape
+)
+
+
+print(
+    "Validation:",
+    validation_df.shape
+)
+
+
+print(
+    "Testing:",
+    test_df.shape
+)
+
+
+
+# ================================================================
+# 5. Prepare Prophet Format
+# ================================================================
+
+
+print("\nPreparing Prophet Dataset...")
+
+
+# Prophet requires:
+
+# ds = datetime
+
+# y = target
+
+
+prophet_train = train_df[
+
+    [
+
+        "datetime",
+
+        "target_energy"
+
+    ]
+
+].copy()
+
+
+
+prophet_train.rename(
+
+    columns={
+
+        "datetime":
+
+        "ds",
+
+
+        "target_energy":
+
+        "y"
+
+    },
+
+    inplace=True
+
+)
+
+
+
+prophet_validation = validation_df[
+
+    [
+
+        "datetime",
+
+        "target_energy"
+
+    ]
+
+].copy()
+
+
+
+prophet_validation.rename(
+
+    columns={
+
+        "datetime":
+
+        "ds",
+
+
+        "target_energy":
+
+        "y"
+
+    },
+
+    inplace=True
+
+)
+
+
+
+prophet_test = test_df[
+
+    [
+
+        "datetime",
+
+        "target_energy"
+
+    ]
+
+].copy()
+
+
+
+prophet_test.rename(
+
+    columns={
+
+        "datetime":
+
+        "ds",
+
+
+        "target_energy":
+
+        "y"
+
+    },
+
+    inplace=True
+
+)
+
+
+
+print(
+
+    prophet_train.head()
+
+)
+
+
+
+# ================================================================
+# 6. Prophet Configuration
+# ================================================================
+
+
+print("\nCreating Prophet Model...")
+
+
+prophet_parameters = {
+
+
+    "growth":
+
+    "linear",
+
+
+    "yearly_seasonality":
+
+    True,
+
+
+    "weekly_seasonality":
+
+    True,
+
+
+    "daily_seasonality":
+
+    False,
+
+
+    "seasonality_mode":
+
+    "multiplicative"
+
+
+}
+
+
+
+prophet_report = pd.DataFrame(
+
+    {
+
+        "parameter":
+
+        list(prophet_parameters.keys()),
+
+
+        "value":
+
+        list(prophet_parameters.values())
+
+    }
+
+)
+
+
+
+prophet_report.to_csv(
+
+    REPORT_DIR /
+
+    "prophet_parameters.csv",
+
+    index=False
+
+)
+
+
+
+# ================================================================
+# 7. Train Prophet Model
+# ================================================================
+
+
+print("\nTraining Prophet Model...")
+
+
+prophet_model = Prophet(
+
+    growth=
+
+    prophet_parameters["growth"],
+
+
+    yearly_seasonality=
+
+    prophet_parameters["yearly_seasonality"],
+
+
+    weekly_seasonality=
+
+    prophet_parameters["weekly_seasonality"],
+
+
+    daily_seasonality=
+
+    prophet_parameters["daily_seasonality"],
+
+
+    seasonality_mode=
+
+    prophet_parameters["seasonality_mode"]
+
+)
+
+
+
+prophet_model.fit(
+
+    prophet_train
+
+)
+
+
+
+print(
+
+    "Prophet Training Completed"
+
+)
+
+
+
+# ================================================================
+# 8. Validation Forecast
+# ================================================================
+
+
+print("\nGenerating Validation Forecast...")
+
+
+validation_future = prophet_validation[
+
+    [
+
+        "ds"
+
+    ]
+
+]
+
+
+validation_prediction = (
+
+    prophet_model
+
+    .predict(
+
+        validation_future
+
+    )
+
+)
+
+
+
+validation_results = pd.DataFrame(
+
+    {
+
+        "datetime":
+
+        prophet_validation["ds"],
+
+
+        "actual":
+
+        prophet_validation["y"],
+
+
+        "prediction":
+
+        validation_prediction["yhat"],
+
+
+        "lower_bound":
+
+        validation_prediction["yhat_lower"],
+
+
+        "upper_bound":
+
+        validation_prediction["yhat_upper"]
+
+    }
+
+)
+
+
+
+print(
+
+    validation_results.head()
+
+)
+
+
+
+validation_results.to_parquet(
+
+    FORECAST_DIR /
+
+    "prophet_validation_forecast.parquet",
+
+    index=False
+
+)
+
+
+
+# ================================================================
+# 9. Prophet Evaluation
+# ================================================================
+
+
+print("\nEvaluating Prophet...")
+
+
+mae = mean_absolute_error(
+
+    validation_results["actual"],
+
+    validation_results["prediction"]
+
+)
+
+
+
+rmse = np.sqrt(
+
+    mean_squared_error(
+
+        validation_results["actual"],
+
+        validation_results["prediction"]
+
+    )
+
+)
+
+
+
+mape = (
+
+    np.mean(
+
+        np.abs(
+
+            (
+
+                validation_results["actual"]
+
+                -
+
+                validation_results["prediction"]
+
+            )
+
+            /
+
+            validation_results["actual"]
+
+        )
+
+    )
+
+    *
+
+    100
+
+)
+
+
+
+prophet_results = pd.DataFrame(
+
+    {
+
+        "Model":
+
+        [
+
+            "Prophet"
+
+        ],
+
+
+        "MAE":
+
+        [
+
+            mae
+
+        ],
+
+
+        "RMSE":
+
+        [
+
+            rmse
+
+        ],
+
+
+        "MAPE":
+
+        [
+
+            mape
+
+        ]
+
+    }
+
+)
+
+
+
+print(
+
+    prophet_results
+
+)
+
+
+
+prophet_results.to_csv(
+
+    REPORT_DIR /
+
+    "prophet_results.csv",
+
+    index=False
+
+)
+
+
+
+# ================================================================
+# 10. Test Forecast
+# ================================================================
+
+
+print("\nGenerating Test Forecast...")
+
+
+test_future = prophet_test[
+
+    [
+
+        "ds"
+
+    ]
+
+]
+
+
+
+test_prediction = (
+
+    prophet_model
+
+    .predict(
+
+        test_future
+
+    )
+
+)
+
+
+
+test_results = pd.DataFrame(
+
+    {
+
+        "datetime":
+
+        prophet_test["ds"],
+
+
+        "actual":
+
+        prophet_test["y"],
+
+
+        "prediction":
+
+        test_prediction["yhat"],
+
+
+        "lower_bound":
+
+        test_prediction["yhat_lower"],
+
+
+        "upper_bound":
+
+        test_prediction["yhat_upper"]
+
+    }
+
+)
+
+
+
+test_results.to_parquet(
+
+    FORECAST_DIR /
+
+    "prophet_test_forecast.parquet",
+
+    index=False
+
+)
+
+
+
+# ================================================================
+# 11. Save Prophet Model
+# ================================================================
+
+
+model_path = (
+
+    MODEL_DIR /
+
+    "prophet_model.pkl"
+
+)
+
+
+
+with open(
+
+    model_path,
+
+    "wb"
+
+) as file:
+
+
+    pickle.dump(
+
+        prophet_model,
+
+        file
+
+    )
+
+
+
+print()
+
+print(
+    "Model Saved:"
+)
+
+print(
+    model_path
+)
+
+
+
+# ================================================================
+# 12. Completion
+# ================================================================
+
+
+print("\n" + "="*80)
+
+print(
+    "PHASE-07 PART-03 COMPLETED SUCCESSFULLY"
+)
+
+print(
+    "PROPHET FORECASTING ENGINE READY"
+)
+
+print("="*80)
+
+# ================================================================
+# PHASE-07 : TIME SERIES FORECASTING ENGINE
+# PART-04
+#
+# XGBoost Forecasting Engine
+#
+# Sustainable Infrastructure Intelligence Platform
+# ================================================================
+
+
+print("="*80)
+print("PHASE-07 PART-04 STARTED")
+print("XGBOOST FORECASTING ENGINE")
+print("="*80)
+
+
+
+# ================================================================
+# 1. Import Libraries
+# ================================================================
+
+
+import os
+import pickle
+import warnings
+import gc
+
+
+import pandas as pd
+import numpy as np
+
+
+from xgboost import XGBRegressor
+
+
+from sklearn.metrics import (
+
+    mean_absolute_error,
+
+    mean_squared_error,
+
+    r2_score
+
+)
+
+
+
+warnings.filterwarnings("ignore")
+
+
+
+# ================================================================
+# 2. Verify Project Paths
+# ================================================================
+
+
+if "FORECAST_DIR" not in globals():
+
+    raise Exception(
+        "Run Phase-07 Part-01 first"
+    )
+
+
+print(
+    "Project configuration loaded"
+)
+
+
+
+# ================================================================
+# 3. Load Forecast Dataset
+# ================================================================
+
+
+forecast_file = (
+
+    FORECAST_DIR /
+
+    "final_forecast_dataset.parquet"
+
+)
+
+
+
+forecast_df = pd.read_parquet(
+
+    forecast_file
+
+)
+
+
+
+print()
+
+print(
+    "Forecast Dataset:",
+    forecast_df.shape
+)
+
+
+
+print(
+
+    forecast_df.head()
+
+)
+
+
+
+# ================================================================
+# 4. Create Forecast Features
+# ================================================================
+
+
+print("\nCreating XGBoost Forecast Features...")
+
+
+
+df_xgb = forecast_df.copy()
+
+
+
+# Sort by date
+
+df_xgb = (
+
+    df_xgb
+
+    .sort_values(
+
+        "datetime"
+
+    )
+
+)
+
+
+
+# ------------------------------------------------
+# Calendar Features
+# ------------------------------------------------
+
+
+df_xgb["year"] = (
+
+    df_xgb["datetime"]
+
+    .dt.year
+
+)
+
+
+df_xgb["month"] = (
+
+    df_xgb["datetime"]
+
+    .dt.month
+
+)
+
+
+df_xgb["day"] = (
+
+    df_xgb["datetime"]
+
+    .dt.day
+
+)
+
+
+df_xgb["weekday"] = (
+
+    df_xgb["datetime"]
+
+    .dt.weekday
+
+)
+
+
+
+df_xgb["week_of_year"] = (
+
+    df_xgb["datetime"]
+
+    .dt.isocalendar()
+
+    .week
+
+    .astype(int)
+
+)
+
+
+
+df_xgb["is_weekend"] = (
+
+    df_xgb["weekday"]
+
+    >= 5
+
+).astype(int)
+
+
+
+# ------------------------------------------------
+# Lag Features
+# ------------------------------------------------
+
+
+print(
+    "Creating lag features..."
+)
+
+
+
+df_xgb["lag_1"] = (
+
+    df_xgb["target_energy"]
+
+    .shift(1)
+
+)
+
+
+
+df_xgb["lag_7"] = (
+
+    df_xgb["target_energy"]
+
+    .shift(7)
+
+)
+
+
+
+df_xgb["lag_14"] = (
+
+    df_xgb["target_energy"]
+
+    .shift(14)
+
+)
+
+
+
+df_xgb["lag_30"] = (
+
+    df_xgb["target_energy"]
+
+    .shift(30)
+
+)
+
+
+
+# ------------------------------------------------
+# Rolling Features
+# ------------------------------------------------
+
+
+print(
+    "Creating rolling features..."
+)
+
+
+
+df_xgb["rolling_7"] = (
+
+    df_xgb["target_energy"]
+
+    .rolling(7)
+
+    .mean()
+
+)
+
+
+
+df_xgb["rolling_30"] = (
+
+    df_xgb["target_energy"]
+
+    .rolling(30)
+
+    .mean()
+
+)
+
+
+
+df_xgb["rolling_std_30"] = (
+
+    df_xgb["target_energy"]
+
+    .rolling(30)
+
+    .std()
+
+)
+
+
+
+# Remove missing rows
+
+df_xgb.dropna(
+
+    inplace=True
+
+)
+
+
+
+print(
+
+    "Feature Dataset:",
+
+    df_xgb.shape
+
+)
+
+
+
+# ================================================================
+# 5. Time Based Split
+# ================================================================
+
+
+print("\nCreating Time Split...")
+
+
+train_end = (
+
+    pd.Timestamp(
+
+        "2016-12-31"
+
+    )
+
+)
+
+
+validation_end = (
+
+    pd.Timestamp(
+
+        "2017-06-30"
+
+    )
+
+)
+
+
+
+train = df_xgb[
+
+    df_xgb.datetime <= train_end
+
+]
+
+
+
+validation = df_xgb[
+
+    (
+
+        df_xgb.datetime >
+
+        train_end
+
+    )
+
+    &
+
+    (
+
+        df_xgb.datetime <=
+
+        validation_end
+
+    )
+
+]
+
+
+
+test = df_xgb[
+
+    df_xgb.datetime >
+
+    validation_end
+
+]
+
+
+
+print()
+
+print(
+    "Train:",
+    train.shape
+)
+
+
+print(
+    "Validation:",
+    validation.shape
+)
+
+
+print(
+    "Test:",
+    test.shape
+)
+
+
+
+# ================================================================
+# 6. Feature Selection
+# ================================================================
+
+
+target = "target_energy"
+
+
+
+drop_columns = [
+
+    "datetime",
+
+    target
+
+]
+
+
+
+features = [
+
+    col
+
+    for col in train.columns
+
+    if col not in drop_columns
+
+]
+
+
+
+print()
+
+print(
+    "Number of Features:",
+    len(features)
+)
+
+
+
+X_train = train[features]
+
+y_train = train[target]
+
+
+
+X_val = validation[features]
+
+y_val = validation[target]
+
+
+
+X_test = test[features]
+
+y_test = test[target]
+
+
+
+# ================================================================
+# 7. Train XGBoost Model
+# ================================================================
+
+
+print("\nTraining XGBoost Model...")
+
+
+xgb_model = XGBRegressor(
+
+    n_estimators=500,
+
+    learning_rate=0.05,
+
+    max_depth=8,
+
+    subsample=0.8,
+
+    colsample_bytree=0.8,
+
+    objective="reg:squarederror",
+
+    random_state=42,
+
+    tree_method="hist"
+
+)
+
+
+
+xgb_model.fit(
+
+    X_train,
+
+    y_train,
+
+    eval_set=[
+
+        (
+
+            X_val,
+
+            y_val
+
+        )
+
+    ],
+
+    verbose=False
+
+)
+
+
+
+print(
+
+    "Training Completed"
+
+)
+
+
+
+# ================================================================
+# 8. Validation Prediction
+# ================================================================
+
+
+print("\nGenerating Validation Forecast...")
+
+
+val_prediction = (
+
+    xgb_model
+
+    .predict(
+
+        X_val
+
+    )
+
+)
+
+
+
+validation_results = pd.DataFrame(
+
+    {
+
+        "datetime":
+
+        validation["datetime"],
+
+
+        "actual":
+
+        y_val.values,
+
+
+        "prediction":
+
+        val_prediction
+
+    }
+
+)
+
+
+
+validation_results.to_parquet(
+
+    FORECAST_DIR /
+
+    "xgboost_validation_forecast.parquet",
+
+    index=False
+
+)
+
+
+
+# ================================================================
+# 9. Evaluation Function
+# ================================================================
+
+
+def evaluate_model(
+
+    actual,
+
+    predicted,
+
+    name
+
+):
+
+
+    mae = mean_absolute_error(
+
+        actual,
+
+        predicted
+
+    )
+
+
+    rmse = np.sqrt(
+
+        mean_squared_error(
+
+            actual,
+
+            predicted
+
+        )
+
+    )
+
+
+    mape = (
+
+        np.mean(
+
+            np.abs(
+
+                (
+
+                    actual
+
+                    -
+
+                    predicted
+
+                )
+
+                /
+
+                actual
+
+            )
+
+        )
+
+        *
+
+        100
+
+    )
+
+
+    r2 = r2_score(
+
+        actual,
+
+        predicted
+
+    )
+
+
+    return pd.DataFrame(
+
+        {
+
+            "Model":
+
+            [name],
+
+
+            "MAE":
+
+            [mae],
+
+
+            "RMSE":
+
+            [rmse],
+
+
+            "MAPE":
+
+            [mape],
+
+
+            "R2":
+
+            [r2]
+
+        }
+
+    )
+
+
+
+# ================================================================
+# 10. Validation Metrics
+# ================================================================
+
+
+xgb_results = evaluate_model(
+
+    y_val,
+
+    val_prediction,
+
+    "XGBoost Forecast"
+
+)
+
+
+
+print(
+
+    xgb_results
+
+)
+
+
+
+xgb_results.to_csv(
+
+    REPORT_DIR /
+
+    "xgboost_forecast_results.csv",
+
+    index=False
+
+)
+
+
+
+# ================================================================
+# 11. Test Forecast
+# ================================================================
+
+
+print("\nGenerating Test Forecast...")
+
+
+test_prediction = (
+
+    xgb_model
+
+    .predict(
+
+        X_test
+
+    )
+
+)
+
+
+
+test_results = pd.DataFrame(
+
+    {
+
+        "datetime":
+
+        test["datetime"],
+
+
+        "actual":
+
+        y_test.values,
+
+
+        "prediction":
+
+        test_prediction
+
+    }
+
+)
+
+
+
+test_results.to_parquet(
+
+    FORECAST_DIR /
+
+    "xgboost_test_forecast.parquet",
+
+    index=False
+
+)
+
+
+
+# ================================================================
+# 12. Feature Importance
+# ================================================================
+
+
+importance = pd.DataFrame(
+
+    {
+
+        "feature":
+
+        features,
+
+
+        "importance":
+
+        xgb_model.feature_importances_
+
+    }
+
+)
+
+
+
+importance = (
+
+    importance
+
+    .sort_values(
+
+        "importance",
+
+        ascending=False
+
+    )
+
+)
+
+
+
+importance.to_csv(
+
+    REPORT_DIR /
+
+    "xgboost_feature_importance.csv",
+
+    index=False
+
+)
+
+
+
+print(
+
+    importance.head(20)
+
+)
+
+
+
+# ================================================================
+# 13. Save Model
+# ================================================================
+
+
+model_path = (
+
+    MODEL_DIR /
+
+    "xgboost_forecast_model.pkl"
+
+)
+
+
+
+with open(
+
+    model_path,
+
+    "wb"
+
+) as file:
+
+
+    pickle.dump(
+
+        xgb_model,
+
+        file
+
+    )
+
+
+
+print()
+
+print(
+    "Model Saved:"
+)
+
+print(
+    model_path
+)
+
+
+
+gc.collect()
+
+
+
+# ================================================================
+# 14. Completion
+# ================================================================
+
+
+print("\n" + "="*80)
+
+print(
+    "PHASE-07 PART-04 COMPLETED SUCCESSFULLY"
+)
+
+print(
+    "XGBOOST FORECASTING ENGINE READY"
+)
+
+print("="*80)
+
+# ================================================================
+# PHASE-07 : TIME SERIES FORECASTING ENGINE
+# PART-05
+#
+# LightGBM Forecasting Engine
+#
+# Sustainable Infrastructure Intelligence Platform
+# ================================================================
+
+
+print("="*80)
+print("PHASE-07 PART-05 STARTED")
+print("LIGHTGBM FORECASTING ENGINE")
+print("="*80)
+
+
+
+# ================================================================
+# 1. Install LightGBM (Google Colab)
+# ================================================================
+
+
+!pip install lightgbm -q
+
+
+
+# ================================================================
+# 2. Import Libraries
+# ================================================================
+
+
+import os
+import pickle
+import warnings
+import gc
+
+
+import pandas as pd
+import numpy as np
+
+
+from lightgbm import LGBMRegressor
+
+
+from sklearn.metrics import (
+
+    mean_absolute_error,
+
+    mean_squared_error,
+
+    r2_score
+
+)
+
+
+
+warnings.filterwarnings("ignore")
+
+
+
+# ================================================================
+# 3. Verify Project Paths
+# ================================================================
+
+
+if "FORECAST_DIR" not in globals():
+
+    raise Exception(
+        "Run Phase-07 Part-01 first"
+    )
+
+
+print(
+    "Project paths verified"
+)
+
+
+
+# ================================================================
+# 4. Load Forecast Dataset
+# ================================================================
+
+
+forecast_file = (
+
+    FORECAST_DIR /
+
+    "final_forecast_dataset.parquet"
+
+)
+
+
+
+forecast_df = pd.read_parquet(
+
+    forecast_file
+
+)
+
+
+
+print()
+
+print(
+    "Dataset Shape:",
+    forecast_df.shape
+)
+
+
+
+# ================================================================
+# 5. Feature Engineering
+# ================================================================
+
+
+print("\nCreating LightGBM Forecast Features...")
+
+
+df_lgbm = forecast_df.copy()
+
+
+
+df_lgbm = (
+
+    df_lgbm
+
+    .sort_values(
+
+        "datetime"
+
+    )
+
+)
+
+
+
+# ------------------------------------------------
+# Calendar Features
+# ------------------------------------------------
+
+
+df_lgbm["year"] = (
+
+    df_lgbm["datetime"]
+
+    .dt.year
+
+)
+
+
+df_lgbm["month"] = (
+
+    df_lgbm["datetime"]
+
+    .dt.month
+
+)
+
+
+df_lgbm["day"] = (
+
+    df_lgbm["datetime"]
+
+    .dt.day
+
+)
+
+
+df_lgbm["weekday"] = (
+
+    df_lgbm["datetime"]
+
+    .dt.weekday
+
+)
+
+
+df_lgbm["quarter"] = (
+
+    df_lgbm["datetime"]
+
+    .dt.quarter
+
+)
+
+
+df_lgbm["week_number"] = (
+
+    df_lgbm["datetime"]
+
+    .dt.isocalendar()
+
+    .week
+
+    .astype(int)
+
+)
+
+
+df_lgbm["is_weekend"] = (
+
+    df_lgbm["weekday"]
+
+    >= 5
+
+).astype(int)
+
+
+
+# ------------------------------------------------
+# Lag Features
+# ------------------------------------------------
+
+
+print(
+    "Generating lag features..."
+)
+
+
+for lag in [
+
+    1,
+
+    7,
+
+    14,
+
+    30,
+
+    60
+
+]:
+
+
+    df_lgbm[
+
+        f"lag_{lag}"
+
+    ] = (
+
+        df_lgbm["target_energy"]
+
+        .shift(lag)
+
+    )
+
+
+
+# ------------------------------------------------
+# Rolling Features
+# ------------------------------------------------
+
+
+print(
+    "Generating rolling features..."
+)
+
+
+for window in [
+
+    7,
+
+    14,
+
+    30,
+
+    60
+
+]:
+
+
+    df_lgbm[
+
+        f"rolling_mean_{window}"
+
+    ] = (
+
+        df_lgbm["target_energy"]
+
+        .rolling(window)
+
+        .mean()
+
+    )
+
+
+    df_lgbm[
+
+        f"rolling_std_{window}"
+
+    ] = (
+
+        df_lgbm["target_energy"]
+
+        .rolling(window)
+
+        .std()
+
+    )
+
+
+
+# Remove NaN
+
+
+df_lgbm.dropna(
+
+    inplace=True
+
+)
+
+
+
+print()
+
+print(
+    "Final Feature Dataset:",
+    df_lgbm.shape
+)
+
+
+
+# ================================================================
+# 6. Time-Based Split
+# ================================================================
+
+
+print("\nCreating Time Split...")
+
+
+train_end = pd.Timestamp(
+
+    "2016-12-31"
+
+)
+
+
+validation_end = pd.Timestamp(
+
+    "2017-06-30"
+
+)
+
+
+
+train = df_lgbm[
+
+    df_lgbm.datetime <= train_end
+
+]
+
+
+
+validation = df_lgbm[
+
+    (
+
+        df_lgbm.datetime >
+
+        train_end
+
+    )
+
+    &
+
+    (
+
+        df_lgbm.datetime <=
+
+        validation_end
+
+    )
+
+]
+
+
+
+test = df_lgbm[
+
+    df_lgbm.datetime >
+
+    validation_end
+
+]
+
+
+
+print()
+
+print(
+    "Train:",
+    train.shape
+)
+
+
+print(
+    "Validation:",
+    validation.shape
+)
+
+
+print(
+    "Test:",
+    test.shape
+)
+
+
+
+# ================================================================
+# 7. Prepare ML Features
+# ================================================================
+
+
+target = "target_energy"
+
+
+
+drop_columns = [
+
+    "datetime",
+
+    target
+
+]
+
+
+
+features = [
+
+    col
+
+    for col in train.columns
+
+    if col not in drop_columns
+
+]
+
+
+
+X_train = train[features]
+
+y_train = train[target]
+
+
+X_validation = validation[features]
+
+y_validation = validation[target]
+
+
+X_test = test[features]
+
+y_test = test[target]
+
+
+
+print()
+
+print(
+    "Feature Count:",
+    len(features)
+)
+
+
+
+# ================================================================
+# 8. Train LightGBM Model
+# ================================================================
+
+
+print("\nTraining LightGBM Model...")
+
+
+lgbm_model = LGBMRegressor(
+
+    n_estimators=600,
+
+    learning_rate=0.05,
+
+    num_leaves=64,
+
+    max_depth=-1,
+
+    subsample=0.8,
+
+    colsample_bytree=0.8,
+
+    random_state=42,
+
+    objective="regression",
+
+    metric="rmse"
+
+)
+
+
+
+lgbm_model.fit(
+
+    X_train,
+
+    y_train,
+
+    eval_set=[
+
+        (
+
+            X_validation,
+
+            y_validation
+
+        )
+
+    ]
+
+)
+
+
+
+print(
+
+    "LightGBM Training Completed"
+
+)
+
+
+
+# ================================================================
+# 9. Validation Forecast
+# ================================================================
+
+
+print("\nGenerating Validation Forecast...")
+
+
+validation_prediction = (
+
+    lgbm_model
+
+    .predict(
+
+        X_validation
+
+    )
+
+)
+
+
+
+validation_results = pd.DataFrame(
+
+    {
+
+        "datetime":
+
+        validation["datetime"],
+
+
+        "actual":
+
+        y_validation.values,
+
+
+        "prediction":
+
+        validation_prediction
+
+    }
+
+)
+
+
+
+validation_results.to_parquet(
+
+    FORECAST_DIR /
+
+    "lightgbm_validation_forecast.parquet",
+
+    index=False
+
+)
+
+
+
+# ================================================================
+# 10. Evaluation Metrics
+# ================================================================
+
+
+print("\nEvaluating LightGBM...")
+
+
+mae = mean_absolute_error(
+
+    y_validation,
+
+    validation_prediction
+
+)
+
+
+
+rmse = np.sqrt(
+
+    mean_squared_error(
+
+        y_validation,
+
+        validation_prediction
+
+    )
+
+)
+
+
+
+mape = (
+
+    np.mean(
+
+        np.abs(
+
+            (
+
+                y_validation.values
+
+                -
+
+                validation_prediction
+
+            )
+
+            /
+
+            y_validation.values
+
+        )
+
+    )
+
+    *
+
+    100
+
+)
+
+
+
+r2 = r2_score(
+
+    y_validation,
+
+    validation_prediction
+
+)
+
+
+
+lgbm_results = pd.DataFrame(
+
+    {
+
+        "Model":
+
+        [
+
+            "LightGBM Forecast"
+
+        ],
+
+
+        "MAE":
+
+        [
+
+            mae
+
+        ],
+
+
+        "RMSE":
+
+        [
+
+            rmse
+
+        ],
+
+
+        "MAPE":
+
+        [
+
+            mape
+
+        ],
+
+
+        "R2":
+
+        [
+
+            r2
+
+        ]
+
+    }
+
+)
+
+
+
+print(
+
+    lgbm_results
+
+)
+
+
+
+lgbm_results.to_csv(
+
+    REPORT_DIR /
+
+    "lightgbm_forecast_results.csv",
+
+    index=False
+
+)
+
+
+
+# ================================================================
+# 11. Test Forecast
+# ================================================================
+
+
+print("\nGenerating Test Forecast...")
+
+
+test_prediction = (
+
+    lgbm_model
+
+    .predict(
+
+        X_test
+
+    )
+
+)
+
+
+
+test_results = pd.DataFrame(
+
+    {
+
+        "datetime":
+
+        test["datetime"],
+
+
+        "actual":
+
+        y_test.values,
+
+
+        "prediction":
+
+        test_prediction
+
+    }
+
+)
+
+
+
+test_results.to_parquet(
+
+    FORECAST_DIR /
+
+    "lightgbm_test_forecast.parquet",
+
+    index=False
+
+)
+
+
+
+# ================================================================
+# 12. Feature Importance
+# ================================================================
+
+
+feature_importance = pd.DataFrame(
+
+    {
+
+        "feature":
+
+        features,
+
+
+        "importance":
+
+        lgbm_model.feature_importances_
+
+    }
+
+)
+
+
+
+feature_importance = (
+
+    feature_importance
+
+    .sort_values(
+
+        "importance",
+
+        ascending=False
+
+    )
+
+)
+
+
+
+feature_importance.to_csv(
+
+    REPORT_DIR /
+
+    "lightgbm_feature_importance.csv",
+
+    index=False
+
+)
+
+
+
+print()
+
+print(
+    feature_importance.head(20)
+)
+
+
+
+# ================================================================
+# 13. Save Model
+# ================================================================
+
+
+model_path = (
+
+    MODEL_DIR /
+
+    "lightgbm_forecast_model.pkl"
+
+)
+
+
+
+with open(
+
+    model_path,
+
+    "wb"
+
+) as file:
+
+
+    pickle.dump(
+
+        lgbm_model,
+
+        file
+
+    )
+
+
+
+print()
+
+print(
+    "Model Saved:"
+)
+
+print(
+    model_path
+)
+
+
+
+gc.collect()
+
+
+
+# ================================================================
+# 14. Completion
+# ================================================================
+
+
+print("\n" + "="*80)
+
+print(
+    "PHASE-07 PART-05 COMPLETED SUCCESSFULLY"
+)
+
+print(
+    "LIGHTGBM FORECASTING ENGINE READY"
+)
+
+print("="*80)
+
+# ================================================================
+# PHASE-07 : TIME SERIES FORECASTING ENGINE
+# PART-06 V2
+#
+# Model Evaluation & Comparison Engine
+#
+# Sustainable Infrastructure Intelligence Platform
+# ================================================================
+
+
+print("="*80)
+print("PHASE-07 PART-06 V2 STARTED")
+print("MODEL EVALUATION & COMPARISON ENGINE")
+print("="*80)
+
+
+
+# ================================================================
+# 1. Import Libraries
+# ================================================================
+
+
+import os
+
+import pandas as pd
+import numpy as np
+
+
+import matplotlib.pyplot as plt
+
+import seaborn as sns
+
+
+
+# ================================================================
+# 2. Create Required Directories
+# ================================================================
+
+
+PLOT_DIR = PROJECT_ROOT / "plots" / "forecasting"
+
+
+PLOT_DIR.mkdir(
+
+    parents=True,
+
+    exist_ok=True
+
+)
+
+
+
+print(
+    "Plot Directory:"
+)
+
+print(
+    PLOT_DIR
+)
+
+
+
+# ================================================================
+# 3. Load Model Results
+# ================================================================
+
+
+print("\nLoading Model Results...")
+
+
+result_files = {
+
+
+    "ARIMA":
+
+    REPORT_DIR /
+
+    "arima_results.csv",
+
+
+
+    "Prophet":
+
+    REPORT_DIR /
+
+    "prophet_results.csv",
+
+
+
+    "XGBoost":
+
+    REPORT_DIR /
+
+    "xgboost_forecast_results.csv",
+
+
+
+    "LightGBM":
+
+    REPORT_DIR /
+
+    "lightgbm_forecast_results.csv"
+
+}
+
+
+
+results=[]
+
+
+
+for model, file in result_files.items():
+
+
+    if file.exists():
+
+
+        df = pd.read_csv(file)
+
+
+        results.append(df)
+
+
+        print(
+
+            model,
+
+            "loaded"
+
+        )
+
+
+    else:
+
+
+        print(
+
+            "Missing:",
+
+            file
+
+        )
+
+
+
+model_comparison = pd.concat(
+
+    results,
+
+    ignore_index=True
+
+)
+
+
+
+# Clean model names
+
+model_comparison["Model"] = (
+
+    model_comparison["Model"]
+
+    .str.replace(
+
+        " Forecast",
+
+        "",
+
+        regex=False
+
+    )
+
+)
+
+
+
+print()
+
+print(model_comparison)
+
+
+
+# ================================================================
+# 4. Handle Missing Metrics
+# ================================================================
+
+
+print("\nCleaning Metrics...")
+
+
+# Missing R2
+
+if "R2" in model_comparison.columns:
+
+
+    model_comparison["R2"] = (
+
+        model_comparison["R2"]
+
+        .fillna(0)
+
+    )
+
+
+
+else:
+
+
+    model_comparison["R2"] = 0
+
+
+
+# ================================================================
+# 5. Normalize Metrics
+# ================================================================
+
+
+for metric in [
+
+    "MAE",
+
+    "RMSE",
+
+    "MAPE"
+
+]:
+
+
+    max_value = (
+
+        model_comparison[metric]
+
+        .max()
+
+    )
+
+
+    model_comparison[
+
+        metric+"_score"
+
+    ] = (
+
+        1 -
+
+        (
+
+            model_comparison[metric]
+
+            /
+
+            max_value
+
+        )
+
+    )
+
+
+
+# R2 normalization
+
+
+max_r2 = (
+
+    model_comparison["R2"]
+
+    .max()
+
+)
+
+
+
+if max_r2 > 0:
+
+
+    model_comparison["R2_score"] = (
+
+        model_comparison["R2"]
+
+        /
+
+        max_r2
+
+    )
+
+
+else:
+
+
+    model_comparison["R2_score"] = 0
+
+
+
+# ================================================================
+# 6. Forecast Score
+# ================================================================
+
+
+model_comparison["forecast_score"] = (
+
+    model_comparison["MAE_score"] * 0.35
+
+    +
+
+    model_comparison["RMSE_score"] * 0.35
+
+    +
+
+    model_comparison["MAPE_score"] * 0.20
+
+    +
+
+    model_comparison["R2_score"] * 0.10
+
+)
+
+
+
+# ================================================================
+# 7. Ranking
+# ================================================================
+
+
+ranking = (
+
+    model_comparison
+
+    .sort_values(
+
+        "forecast_score",
+
+        ascending=False
+
+    )
+
+    .reset_index(drop=True)
+
+)
+
+
+
+ranking["Rank"] = (
+
+    ranking.index + 1
+
+)
+
+
+
+print()
+
+print(
+    "Forecast Leaderboard"
+)
+
+print(ranking)
+
+
+
+# ================================================================
+# 8. Best Model
+# ================================================================
+
+
+best_model = (
+
+    ranking.iloc[0]["Model"]
+
+)
+
+
+best_score = (
+
+    ranking.iloc[0]["forecast_score"]
+
+)
+
+
+
+print()
+
+print(
+    "Best Model:",
+    best_model
+)
+
+
+print(
+    "Score:",
+    best_score
+)
+
+
+
+# ================================================================
+# 9. Save Reports
+# ================================================================
+
+
+model_comparison.to_csv(
+
+    REPORT_DIR /
+
+    "forecasting_model_comparison.csv",
+
+    index=False
+
+)
+
+
+
+ranking.to_csv(
+
+    REPORT_DIR /
+
+    "forecasting_model_ranking.csv",
+
+    index=False
+
+)
+
+
+
+with open(
+
+    REPORT_DIR /
+
+    "best_forecasting_model.txt",
+
+    "w"
+
+) as f:
+
+
+    f.write(
+
+        f"Best Model: {best_model}\n"
+
+    )
+
+    f.write(
+
+        f"Score: {best_score}\n"
+
+    )
+
+
+
+# ================================================================
+# 10. Combine Forecast Outputs
+# ================================================================
+
+
+print("\nCombining Forecast Outputs...")
+
+
+prediction_files = {
+
+
+"ARIMA":
+
+FORECAST_DIR /
+
+"arima_validation_forecast.parquet",
+
+
+"Prophet":
+
+FORECAST_DIR /
+
+"prophet_validation_forecast.parquet",
+
+
+"XGBoost":
+
+FORECAST_DIR /
+
+"xgboost_validation_forecast.parquet",
+
+
+"LightGBM":
+
+FORECAST_DIR /
+
+"lightgbm_validation_forecast.parquet"
+
+}
+
+
+
+prediction_list=[]
+
+
+
+for model,file in prediction_files.items():
+
+
+    if file.exists():
+
+
+        temp=pd.read_parquet(file)
+
+
+        temp["model"]=model
+
+
+        prediction_list.append(temp)
+
+
+
+prediction_comparison = pd.concat(
+
+    prediction_list,
+
+    ignore_index=True
+
+)
+
+
+
+prediction_comparison.to_parquet(
+
+    FORECAST_DIR /
+
+    "model_prediction_comparison.parquet",
+
+    index=False
+
+)
+
+
+
+# ================================================================
+# 11. Visualization 1
+# ================================================================
+
+
+plt.figure(
+
+    figsize=(10,6)
+
+)
+
+
+sns.barplot(
+
+    data=ranking,
+
+    x="Model",
+
+    y="forecast_score"
+
+)
+
+
+
+plt.title(
+
+    "Forecast Model Score Comparison"
+
+)
+
+
+plt.xticks(rotation=45)
+
+plt.tight_layout()
+
+
+
+plt.savefig(
+
+    PLOT_DIR /
+
+    "model_performance_comparison.png",
+
+    dpi=300
+
+)
+
+
+plt.show()
+
+
+
+# ================================================================
+# 12. Visualization 2
+# ================================================================
+
+
+plt.figure(
+
+    figsize=(10,6)
+
+)
+
+
+sns.barplot(
+
+    data=ranking,
+
+    x="Model",
+
+    y="RMSE"
+
+)
+
+
+
+plt.title(
+
+    "Forecast RMSE Comparison"
+
+)
+
+
+
+plt.xticks(rotation=45)
+
+plt.tight_layout()
+
+
+
+plt.savefig(
+
+    PLOT_DIR /
+
+    "model_error_comparison.png",
+
+    dpi=300
+
+)
+
+
+plt.show()
+
+
+
+# ================================================================
+# 13. Completion
+# ================================================================
+
+
+print("\n" + "="*80)
+
+print(
+"PHASE-07 PART-06 COMPLETED SUCCESSFULLY"
+)
+
+print(
+"MODEL EVALUATION ENGINE READY"
+)
+
+print("="*80)
+
+
+print()
+
+print(
+"Selected Best Forecast Model:",
+best_model
+)
+
+# ================================================================
+# PHASE-07 : TIME SERIES FORECASTING ENGINE
+# PART-07 FIXED
+#
+# Future Forecast Generation
+#
+# Compatible with XGBoost Forecast Model
+#
+# Sustainable Infrastructure Intelligence Platform
+# ================================================================
+
+
+print("="*80)
+print("PHASE-07 PART-07 STARTED")
+print("FUTURE FORECAST GENERATION ENGINE")
+print("="*80)
+
+
+
+# ================================================================
+# 1. Imports
+# ================================================================
+
+
+import pickle
+import pandas as pd
+import numpy as np
+
+
+
+# ================================================================
+# 2. Verify Paths
+# ================================================================
+
+
+print("Project paths verified")
+
+
+
+# ================================================================
+# 3. Load Best Model
+# ================================================================
+
+
+with open(
+
+    REPORT_DIR /
+
+    "best_forecasting_model.txt",
+
+    "r"
+
+) as file:
+
+    best_model_info = file.read()
+
+
+
+print(best_model_info)
+
+
+
+best_model = (
+
+    best_model_info
+
+    .split(":")[1]
+
+    .split("\n")[0]
+
+    .strip()
+
+)
+
+
+
+print()
+
+print(
+"Selected Model:",
+best_model
+)
+
+
+
+if best_model != "XGBoost":
+
+    raise Exception(
+
+        "This version is configured for XGBoost forecasting"
+
+    )
+
+
+
+model_path = (
+
+    MODEL_DIR /
+
+    "xgboost_forecast_model.pkl"
+
+)
+
+
+
+with open(
+
+    model_path,
+
+    "rb"
+
+) as file:
+
+
+    model = pickle.load(file)
+
+
+
+print()
+
+print(
+"Model Loaded:"
+)
+
+print(model_path)
+
+
+
+# ================================================================
+# 4. Load Historical Data
+# ================================================================
+
+
+history_path = (
+
+    FORECAST_DIR /
+
+    "final_forecast_dataset.parquet"
+
+)
+
+
+
+history = pd.read_parquet(
+
+    history_path
+
+)
+
+
+
+history = (
+
+    history
+
+    .sort_values(
+
+        "datetime"
+
+    )
+
+)
+
+
+
+print()
+
+print(
+"Historical Data:",
+history.shape
+)
+
+
+
+# ================================================================
+# 5. EXACT XGBoost Feature Generator
+# ================================================================
+
+
+def create_xgb_features(df):
+
+
+    data = df.copy()
+
+
+    data = (
+
+        data
+
+        .sort_values(
+
+            "datetime"
+
+        )
+
+    )
+
+
+    # Calendar Features
+
+    data["year"] = (
+
+        data["datetime"]
+
+        .dt.year
+
+    )
+
+
+    data["month"] = (
+
+        data["datetime"]
+
+        .dt.month
+
+    )
+
+
+    data["day"] = (
+
+        data["datetime"]
+
+        .dt.day
+
+    )
+
+
+    data["weekday"] = (
+
+        data["datetime"]
+
+        .dt.weekday
+
+    )
+
+
+
+    data["week_of_year"] = (
+
+        data["datetime"]
+
+        .dt.isocalendar()
+
+        .week
+
+        .astype(int)
+
+    )
+
+
+
+    data["is_weekend"] = (
+
+        data["weekday"]
+
+        >=5
+
+    ).astype(int)
+
+
+
+    # EXACT TRAINING LAGS
+
+
+    data["lag_1"] = (
+
+        data["target_energy"]
+
+        .shift(1)
+
+    )
+
+
+    data["lag_7"] = (
+
+        data["target_energy"]
+
+        .shift(7)
+
+    )
+
+
+    data["lag_14"] = (
+
+        data["target_energy"]
+
+        .shift(14)
+
+    )
+
+
+    data["lag_30"] = (
+
+        data["target_energy"]
+
+        .shift(30)
+
+    )
+
+
+
+    # EXACT TRAINING ROLLING FEATURES
+
+
+    data["rolling_7"] = (
+
+        data["target_energy"]
+
+        .rolling(7)
+
+        .mean()
+
+    )
+
+
+
+    data["rolling_30"] = (
+
+        data["target_energy"]
+
+        .rolling(30)
+
+        .mean()
+
+    )
+
+
+
+    data["rolling_std_30"] = (
+
+        data["target_energy"]
+
+        .rolling(30)
+
+        .std()
+
+    )
+
+
+
+    return data
+
+
+
+# ================================================================
+# 6. Future Forecast Generator
+# ================================================================
+
+
+def generate_future_forecast(
+
+    history,
+
+    days
+
+):
+
+
+    future_dates = pd.date_range(
+
+        start=
+
+        history["datetime"].max()
+
+        +
+
+        pd.Timedelta(days=1),
+
+
+        periods=days,
+
+        freq="D"
+
+    )
+
+
+
+    future = pd.DataFrame(
+
+        {
+
+            "datetime":
+
+            future_dates,
+
+
+            "target_energy":
+
+            np.nan
+
+        }
+
+    )
+
+
+
+    combined = pd.concat(
+
+        [
+
+            history,
+
+            future
+
+        ],
+
+        ignore_index=True
+
+    )
+
+
+
+    feature_data = create_xgb_features(
+
+        combined
+
+    )
+
+
+
+    future_rows = (
+
+        feature_data
+
+        .tail(days)
+
+        .copy()
+
+    )
+
+
+
+    # Use previous values for recursive forecasting
+
+
+    future_rows = (
+
+        future_rows
+
+        .ffill()
+
+    )
+
+
+
+    required_features = [
+
+        "year",
+
+        "month",
+
+        "day",
+
+        "weekday",
+
+        "week_of_year",
+
+        "is_weekend",
+
+        "lag_1",
+
+        "lag_7",
+
+        "lag_14",
+
+        "lag_30",
+
+        "rolling_7",
+
+        "rolling_30",
+
+        "rolling_std_30"
+
+    ]
+
+
+
+    X_future = future_rows[
+
+        required_features
+
+    ]
+
+
+
+    predictions = model.predict(
+
+        X_future
+
+    )
+
+
+
+    result = pd.DataFrame(
+
+        {
+
+            "datetime":
+
+            future_dates,
+
+
+            "predicted_energy":
+
+            predictions
+
+        }
+
+    )
+
+
+    return result
+
+
+
+# ================================================================
+# 7. Generate Forecasts
+# ================================================================
+
+
+print()
+
+print(
+"Generating Forecasts..."
+)
+
+
+
+forecast_7 = generate_future_forecast(
+
+    history,
+
+    7
+
+)
+
+
+
+forecast_30 = generate_future_forecast(
+
+    history,
+
+    30
+
+)
+
+
+
+forecast_90 = generate_future_forecast(
+
+    history,
+
+    90
+
+)
+
+
+
+print()
+
+print(
+forecast_7
+)
+
+
+
+# ================================================================
+# 8. Save Forecast Outputs
+# ================================================================
+
+
+forecast_7.to_parquet(
+
+    FORECAST_DIR /
+
+    "future_forecast_7_days.parquet",
+
+    index=False
+
+)
+
+
+
+forecast_30.to_parquet(
+
+    FORECAST_DIR /
+
+    "future_forecast_30_days.parquet",
+
+    index=False
+
+)
+
+
+
+forecast_90.to_parquet(
+
+    FORECAST_DIR /
+
+    "future_forecast_90_days.parquet",
+
+    index=False
+
+)
+
+
+
+# ================================================================
+# 9. Summary Report
+# ================================================================
+
+
+summary = pd.DataFrame(
+
+    {
+
+        "Forecast Period":
+
+        [
+
+            "7 Days",
+
+            "30 Days",
+
+            "90 Days"
+
+        ],
+
+
+        "Average Energy":
+
+        [
+
+            forecast_7.predicted_energy.mean(),
+
+            forecast_30.predicted_energy.mean(),
+
+            forecast_90.predicted_energy.mean()
+
+        ],
+
+
+        "Maximum Energy":
+
+        [
+
+            forecast_7.predicted_energy.max(),
+
+            forecast_30.predicted_energy.max(),
+
+            forecast_90.predicted_energy.max()
+
+        ]
+
+    }
+
+)
+
+
+
+summary.to_csv(
+
+    REPORT_DIR /
+
+    "future_forecast_summary.csv",
+
+    index=False
+
+)
+
+
+
+print()
+
+print(summary)
+
+
+
+# ================================================================
+# 10. Completion
+# ================================================================
+
+
+print("\n" + "="*80)
+
+print(
+"PHASE-07 PART-07 COMPLETED SUCCESSFULLY"
+)
+
+print(
+"FUTURE FORECASTS GENERATED"
+)
+
+print("="*80)
+
+# ================================================================
+# PHASE-07 : TIME SERIES FORECASTING ENGINE
+# PART-08
+#
+# Interactive Forecast Visualizations
+# Plotly Dashboard Assets
+#
+# Sustainable Infrastructure Intelligence Platform
+# ================================================================
+
+
+print("="*80)
+print("PHASE-07 PART-08 STARTED")
+print("INTERACTIVE FORECAST VISUALIZATION ENGINE")
+print("="*80)
+
+
+
+# ================================================================
+# 1. Import Libraries
+# ================================================================
+
+
+import pandas as pd
+import numpy as np
+
+
+import plotly.graph_objects as go
+
+from plotly.subplots import make_subplots
+
+
+
+# ================================================================
+# 2. Create Plot Directory
+# ================================================================
+
+
+PLOT_DIR = PROJECT_ROOT / "plots" / "forecasting"
+
+
+PLOT_DIR.mkdir(
+
+    parents=True,
+
+    exist_ok=True
+
+)
+
+
+
+print()
+
+print(
+"Plot Directory:"
+)
+
+print(
+PLOT_DIR
+)
+
+
+
+# ================================================================
+# 3. Load Forecast Files
+# ================================================================
+
+
+print("\nLoading Forecast Data...")
+
+
+
+history = pd.read_parquet(
+
+    FORECAST_DIR /
+
+    "final_forecast_dataset.parquet"
+
+)
+
+
+
+forecast_7 = pd.read_parquet(
+
+    FORECAST_DIR /
+
+    "future_forecast_7_days.parquet"
+
+)
+
+
+
+forecast_30 = pd.read_parquet(
+
+    FORECAST_DIR /
+
+    "future_forecast_30_days.parquet"
+
+)
+
+
+
+forecast_90 = pd.read_parquet(
+
+    FORECAST_DIR /
+
+    "future_forecast_90_days.parquet"
+
+)
+
+
+
+history = (
+
+    history
+
+    .sort_values(
+
+        "datetime"
+
+    )
+
+)
+
+
+
+print()
+
+print(
+"Historical:",
+history.shape
+)
+
+
+print(
+"7 Day Forecast:",
+forecast_7.shape
+)
+
+
+print(
+"30 Day Forecast:",
+forecast_30.shape
+)
+
+
+print(
+"90 Day Forecast:",
+forecast_90.shape
+)
+
+
+
+# ================================================================
+# 4. Historical Energy Trend
+# ================================================================
+
+
+print("\nCreating Historical Trend Plot...")
+
+
+fig = go.Figure()
+
+
+
+fig.add_trace(
+
+    go.Scatter(
+
+        x=
+
+        history["datetime"],
+
+
+        y=
+
+        history["target_energy"],
+
+
+        mode="lines",
+
+
+        name="Historical Energy",
+
+
+        line=dict(
+
+            color="blue",
+
+            width=2
+
+        )
+
+    )
+
+)
+
+
+
+fig.update_layout(
+
+    title=
+
+    "Historical Energy Consumption Trend",
+
+
+    xaxis_title=
+
+    "Date",
+
+
+    yaxis_title=
+
+    "Energy Consumption",
+
+
+    template="plotly_white",
+
+
+    height=500
+
+)
+
+
+
+fig.write_html(
+
+    PLOT_DIR /
+
+    "historical_energy_trend.html"
+
+)
+
+
+
+fig.show()
+
+
+
+# ================================================================
+# 5. Function Forecast Plot
+# ================================================================
+
+
+def create_forecast_plot(
+
+    forecast,
+
+    days
+
+):
+
+
+    fig = go.Figure()
+
+
+
+    fig.add_trace(
+
+        go.Scatter(
+
+            x=
+
+            forecast["datetime"],
+
+
+            y=
+
+            forecast["predicted_energy"],
+
+
+            mode="lines+markers",
+
+
+            name=
+
+            f"{days} Day Forecast",
+
+
+            line=dict(
+
+                color="green",
+
+                width=3
+
+            )
+
+        )
+
+    )
+
+
+
+    fig.update_layout(
+
+        title=
+
+        f"Future Energy Forecast - {days} Days",
+
+
+        xaxis_title=
+
+        "Future Date",
+
+
+        yaxis_title=
+
+        "Predicted Energy",
+
+
+        template="plotly_white",
+
+
+        height=500
+
+    )
+
+
+    return fig
+
+
+
+# ================================================================
+# 6. Generate Individual Forecast Charts
+# ================================================================
+
+
+print(
+"Generating Forecast Charts..."
+)
+
+
+
+fig_7 = create_forecast_plot(
+
+    forecast_7,
+
+    7
+
+)
+
+
+
+fig_7.write_html(
+
+    PLOT_DIR /
+
+    "forecast_7_days.html"
+
+)
+
+
+
+fig_7.show()
+
+
+
+fig_30 = create_forecast_plot(
+
+    forecast_30,
+
+    30
+
+)
+
+
+
+fig_30.write_html(
+
+    PLOT_DIR /
+
+    "forecast_30_days.html"
+
+)
+
+
+
+fig_30.show()
+
+
+
+fig_90 = create_forecast_plot(
+
+    forecast_90,
+
+    90
+
+)
+
+
+
+fig_90.write_html(
+
+    PLOT_DIR /
+
+    "forecast_90_days.html"
+
+)
+
+
+
+fig_90.show()
+
+
+
+# ================================================================
+# 7. Combined Historical + Future Dashboard
+# ================================================================
+
+
+print(
+"Creating Combined Forecast Dashboard..."
+)
+
+
+
+combined_fig = go.Figure()
+
+
+
+# Historical
+
+
+combined_fig.add_trace(
+
+    go.Scatter(
+
+        x=
+
+        history["datetime"],
+
+
+        y=
+
+        history["target_energy"],
+
+
+        mode="lines",
+
+
+        name="Historical",
+
+
+        line=dict(
+
+            color="blue"
+
+        )
+
+    )
+
+)
+
+
+
+# 7 Day
+
+
+combined_fig.add_trace(
+
+    go.Scatter(
+
+        x=
+
+        forecast_7["datetime"],
+
+
+        y=
+
+        forecast_7["predicted_energy"],
+
+
+        mode="lines+markers",
+
+
+        name="7 Day Forecast",
+
+
+        line=dict(
+
+            color="green"
+
+        )
+
+    )
+
+)
+
+
+
+# 30 Day
+
+
+combined_fig.add_trace(
+
+    go.Scatter(
+
+        x=
+
+        forecast_30["datetime"],
+
+
+        y=
+
+        forecast_30["predicted_energy"],
+
+
+        mode="lines",
+
+
+        name="30 Day Forecast",
+
+
+        line=dict(
+
+            color="orange"
+
+        )
+
+    )
+
+)
+
+
+
+# 90 Day
+
+
+combined_fig.add_trace(
+
+    go.Scatter(
+
+        x=
+
+        forecast_90["datetime"],
+
+
+        y=
+
+        forecast_90["predicted_energy"],
+
+
+        mode="lines",
+
+
+        name="90 Day Forecast",
+
+
+        line=dict(
+
+            color="red"
+
+        )
+
+    )
+
+)
+
+
+
+combined_fig.update_layout(
+
+    title=
+
+    "Sustainable Infrastructure Energy Forecast Dashboard",
+
+
+    xaxis_title=
+
+    "Date",
+
+
+    yaxis_title=
+
+    "Energy Consumption",
+
+
+    template="plotly_white",
+
+
+    height=600,
+
+
+    hovermode="x unified"
+
+)
+
+
+
+combined_fig.write_html(
+
+    PLOT_DIR /
+
+    "combined_forecast_dashboard.html"
+
+)
+
+
+
+combined_fig.show()
+
+
+
+# ================================================================
+# 8. Completion
+# ================================================================
+
+
+print("\n" + "="*80)
+
+print(
+"PHASE-07 PART-08 COMPLETED SUCCESSFULLY"
+)
+
+print(
+"INTERACTIVE FORECAST VISUALIZATIONS CREATED"
+)
+
+print("="*80)
+
+
+
+print()
+
+print(
+"Saved Location:"
+)
+
+print(
+PLOT_DIR
+)
+
+# ================================================================
+# PHASE-07 : TIME SERIES FORECASTING ENGINE
+# PART-09
+#
+# Save Models, Forecasts & Reports
+#
+# Sustainable Infrastructure Intelligence Platform
+# ================================================================
+
+
+print("="*80)
+print("PHASE-07 PART-09 STARTED")
+print("MODEL, FORECAST & REPORT REGISTRY")
+print("="*80)
+
+
+
+# ================================================================
+# 1. Import Libraries
+# ================================================================
+
+
+import os
+import json
+from datetime import datetime
+
+
+import pandas as pd
+
+
+
+# ================================================================
+# 2. Create Required Directories
+# ================================================================
+
+
+FORECAST_MODEL_DIR = (
+
+    MODEL_DIR /
+
+    "forecasting"
+
+)
+
+
+FORECAST_MODEL_DIR.mkdir(
+
+    parents=True,
+
+    exist_ok=True
+
+)
+
+
+
+print()
+
+print(
+"Forecast Model Directory:"
+)
+
+print(
+FORECAST_MODEL_DIR
+)
+
+
+
+# ================================================================
+# 3. Load Best Model Information
+# ================================================================
+
+
+best_model_file = (
+
+    REPORT_DIR /
+
+    "best_forecasting_model.txt"
+
+)
+
+
+
+with open(
+
+    best_model_file,
+
+    "r"
+
+) as file:
+
+
+    best_model_text = file.read()
+
+
+
+best_model = (
+
+    best_model_text
+
+    .split(":")[1]
+
+    .split("\n")[0]
+
+    .strip()
+
+)
+
+
+
+print()
+
+print(
+"Selected Production Model:"
+)
+
+print(
+best_model
+)
+
+
+
+# ================================================================
+# 4. Collect Model Registry Information
+# ================================================================
+
+
+model_registry = {
+
+
+    "project":
+
+    "Sustainable Infrastructure Intelligence Platform",
+
+
+
+    "phase":
+
+    "PHASE-07 Time-Series Forecasting Engine",
+
+
+
+    "created_date":
+
+    str(datetime.now()),
+
+
+
+    "best_model":
+
+    best_model,
+
+
+
+    "models":
+
+    {
+
+        "ARIMA":
+
+        {
+
+            "type":
+
+            "Statistical Forecasting",
+
+            "status":
+
+            "completed"
+
+        },
+
+
+        "Prophet":
+
+        {
+
+            "type":
+
+            "Trend Seasonality Forecasting",
+
+            "status":
+
+            "completed"
+
+        },
+
+
+        "XGBoost":
+
+        {
+
+            "type":
+
+            "Machine Learning Forecasting",
+
+            "file":
+
+            "xgboost_forecast_model.pkl",
+
+            "status":
+
+            "completed"
+
+        },
+
+
+        "LightGBM":
+
+        {
+
+            "type":
+
+            "Machine Learning Forecasting",
+
+            "file":
+
+            "lightgbm_forecast_model.pkl",
+
+            "status":
+
+            "completed"
+
+        }
+
+    }
+
+}
+
+
+
+registry_path = (
+
+    FORECAST_MODEL_DIR /
+
+    "forecasting_model_registry.json"
+
+)
+
+
+
+with open(
+
+    registry_path,
+
+    "w"
+
+) as file:
+
+
+    json.dump(
+
+        model_registry,
+
+        file,
+
+        indent=4
+
+    )
+
+
+
+print()
+
+print(
+"Model Registry Saved:"
+)
+
+print(
+registry_path
+)
+
+
+
+# ================================================================
+# 5. Collect Forecast Artifacts
+# ================================================================
+
+
+forecast_files = [
+
+    "future_forecast_7_days.parquet",
+
+    "future_forecast_30_days.parquet",
+
+    "future_forecast_90_days.parquet",
+
+    "model_prediction_comparison.parquet"
+
+]
+
+
+
+artifact_records = []
+
+
+
+for filename in forecast_files:
+
+
+    path = (
+
+        FORECAST_DIR /
+
+        filename
+
+    )
+
+
+    if path.exists():
+
+
+        df = pd.read_parquet(path)
+
+
+        artifact_records.append(
+
+            {
+
+
+                "file":
+
+                filename,
+
+
+                "rows":
+
+                len(df),
+
+
+                "columns":
+
+                len(df.columns),
+
+
+                "location":
+
+                str(path)
+
+
+            }
+
+        )
+
+
+
+artifact_summary = pd.DataFrame(
+
+    artifact_records
+
+)
+
+
+
+artifact_summary.to_parquet(
+
+    FORECAST_DIR /
+
+    "forecasting_artifact_summary.parquet",
+
+    index=False
+
+)
+
+
+
+print()
+
+print(
+artifact_summary
+)
+
+
+
+# ================================================================
+# 6. Create Final Phase-07 Summary Report
+# ================================================================
+
+
+summary = pd.DataFrame(
+
+    {
+
+
+        "Component":
+
+        [
+
+            "ARIMA",
+
+            "Prophet",
+
+            "XGBoost",
+
+            "LightGBM",
+
+            "Future Forecast",
+
+            "Visualization"
+
+        ],
+
+
+        "Status":
+
+        [
+
+            "Completed",
+
+            "Completed",
+
+            "Completed",
+
+            "Completed",
+
+            "Completed",
+
+            "Completed"
+
+        ]
+
+    }
+
+)
+
+
+
+summary.to_csv(
+
+    REPORT_DIR /
+
+    "phase07_final_summary.csv",
+
+    index=False
+
+)
+
+
+
+# ================================================================
+# 7. Load Evaluation Ranking
+# ================================================================
+
+
+ranking_file = (
+
+    REPORT_DIR /
+
+    "forecasting_model_ranking.csv"
+
+)
+
+
+
+if ranking_file.exists():
+
+
+    ranking = pd.read_csv(
+
+        ranking_file
+
+    )
+
+
+    ranking.to_csv(
+
+        REPORT_DIR /
+
+        "model_registry_report.csv",
+
+        index=False
+
+    )
+
+
+
+    print()
+
+    print(
+    "Model Ranking Report Saved"
+    )
+
+
+
+# ================================================================
+# 8. Final Artifact Listing
+# ================================================================
+
+
+print("\nFINAL PHASE-07 ARTIFACTS")
+
+
+for root, dirs, files in os.walk(
+
+    FORECAST_DIR
+
+):
+
+
+    for file in files:
+
+
+        print(
+
+            os.path.join(
+
+                root,
+
+                file
+
+            )
+
+        )
+
+
+
+# ================================================================
+# 9. Completion
+# ================================================================
+
+
+print("\n" + "="*80)
+
+print(
+"PHASE-07 PART-09 COMPLETED SUCCESSFULLY"
+)
+
+print(
+"MODELS, FORECASTS AND REPORTS REGISTERED"
+)
+
+print("="*80)
+
+# ================================================================
+# PHASE-07 : TIME SERIES FORECASTING ENGINE
+# PART-10
+#
+# Project Recovery Log & Final Outputs
+#
+# Sustainable Infrastructure Intelligence Platform
+# ================================================================
+
+
+print("="*80)
+print("PHASE-07 PART-10 STARTED")
+print("PROJECT RECOVERY LOG & FINAL OUTPUT GENERATION")
+print("="*80)
+
+
+
+# ================================================================
+# 1. Import Libraries
+# ================================================================
+
+
+import os
+from datetime import datetime
+
+
+import pandas as pd
+
+
+
+# ================================================================
+# 2. Create Phase-07 Report Directory
+# ================================================================
+
+
+PHASE07_REPORT_DIR = (
+
+    REPORT_DIR /
+
+    "phase07"
+
+)
+
+
+
+PHASE07_REPORT_DIR.mkdir(
+
+    parents=True,
+
+    exist_ok=True
+
+)
+
+
+
+print()
+
+print(
+"Phase-07 Report Directory:"
+)
+
+print(
+PHASE07_REPORT_DIR
+)
+
+
+
+# ================================================================
+# 3. Artifact Inventory Generator
+# ================================================================
+
+
+artifact_records = []
+
+
+
+search_locations = [
+
+    MODEL_DIR /
+
+    "forecasting",
+
+
+    FORECAST_DIR,
+
+
+    REPORT_DIR,
+
+
+    PLOT_DIR
+
+]
+
+
+
+for location in search_locations:
+
+
+    if location.exists():
+
+
+        for root, dirs, files in os.walk(location):
+
+
+            for file in files:
+
+
+                file_path = (
+
+                    os.path.join(
+
+                        root,
+
+                        file
+
+                    )
+
+                )
+
+
+                artifact_records.append(
+
+                    {
+
+
+                    "file_name":
+
+                    file,
+
+
+                    "location":
+
+                    file_path,
+
+
+                    "size_MB":
+
+                    round(
+
+                        os.path.getsize(file_path)
+
+                        /
+
+                        (1024*1024),
+
+                        3
+
+                    )
+
+                    }
+
+                )
+
+
+
+artifact_inventory = pd.DataFrame(
+
+    artifact_records
+
+)
+
+
+
+artifact_inventory.to_csv(
+
+    PHASE07_REPORT_DIR /
+
+    "phase07_artifact_inventory.csv",
+
+    index=False
+
+)
+
+
+
+print()
+
+print(
+"Artifacts Found:",
+len(artifact_inventory)
+)
+
+
+
+# ================================================================
+# 4. Load Model Ranking Summary
+# ================================================================
+
+
+ranking_file = (
+
+    REPORT_DIR /
+
+    "forecasting_model_ranking.csv"
+
+)
+
+
+
+if ranking_file.exists():
+
+
+    model_summary = pd.read_csv(
+
+        ranking_file
+
+    )
+
+
+else:
+
+
+    model_summary = pd.DataFrame()
+
+
+
+model_summary.to_csv(
+
+    PHASE07_REPORT_DIR /
+
+    "phase07_model_summary.csv",
+
+    index=False
+
+)
+
+
+
+# ================================================================
+# 5. Generate Completion Report
+# ================================================================
+
+
+completion_report = f"""
+
+================================================================================
+SUSTAINABLE INFRASTRUCTURE INTELLIGENCE PLATFORM
+PHASE-07 COMPLETION REPORT
+TIME-SERIES FORECASTING ENGINE
+================================================================================
+
+
+PROJECT:
+
+Sustainable Infrastructure Intelligence Platform
+
+
+PHASE:
+
+PHASE-07 Time-Series Forecasting Engine
+
+
+STATUS:
+
+COMPLETED SUCCESSFULLY
+
+
+Completion Date:
+
+{datetime.now()}
+
+
+
+================================================================================
+COMPLETED COMPONENTS
+================================================================================
+
+
+PART-01:
+
+Time-Series Data Preparation
+
+
+STATUS:
+
+COMPLETE
+
+
+
+PART-02:
+
+ARIMA Forecasting Engine
+
+
+STATUS:
+
+COMPLETE
+
+
+
+PART-03:
+
+Prophet Forecasting Engine
+
+
+STATUS:
+
+COMPLETE
+
+
+
+PART-04:
+
+XGBoost Forecasting Engine
+
+
+STATUS:
+
+COMPLETE
+
+
+
+PART-05:
+
+LightGBM Forecasting Engine
+
+
+STATUS:
+
+COMPLETE
+
+
+
+PART-06:
+
+Model Evaluation & Comparison
+
+
+STATUS:
+
+COMPLETE
+
+
+
+PART-07:
+
+Future Forecast Generation
+
+
+Forecast Horizons:
+
+- 7 Days
+
+- 30 Days
+
+- 90 Days
+
+
+
+STATUS:
+
+COMPLETE
+
+
+
+PART-08:
+
+Interactive Plotly Visualizations
+
+
+STATUS:
+
+COMPLETE
+
+
+
+PART-09:
+
+Models, Forecasts & Reports Registry
+
+
+STATUS:
+
+COMPLETE
+
+
+
+PART-10:
+
+Recovery Documentation
+
+
+STATUS:
+
+COMPLETE
+
+
+
+================================================================================
+FORECASTING MODELS DEVELOPED
+================================================================================
+
+
+1. ARIMA
+
+Purpose:
+
+Statistical baseline forecasting
+
+
+
+2. Prophet
+
+Purpose:
+
+Trend and seasonality forecasting
+
+
+
+3. XGBoost
+
+Purpose:
+
+Machine learning forecasting
+
+
+
+4. LightGBM
+
+Purpose:
+
+Gradient boosting forecasting
+
+
+
+================================================================================
+OUTPUT ARTIFACTS
+================================================================================
+
+
+Models:
+
+- Forecasting model files
+
+- Model registry
+
+
+
+Forecast Files:
+
+- 7 Day Forecast
+
+- 30 Day Forecast
+
+- 90 Day Forecast
+
+
+
+Reports:
+
+- Model comparison
+
+- Forecast ranking
+
+- Performance metrics
+
+
+
+Visualizations:
+
+- Plotly interactive dashboards
+
+
+
+================================================================================
+NEXT DEVELOPMENT PHASE
+================================================================================
+
+
+PHASE-08:
+
+SUSTAINABILITY INTELLIGENCE ENGINE
+
+
+
+Objectives:
+
+
+- Energy optimization recommendations
+
+- Sustainability improvement suggestions
+
+- Building efficiency analysis
+
+- Carbon reduction insights
+
+
+
+================================================================================
+PROJECT STATUS
+================================================================================
+
+
+PHASE-01 Dataset Discovery              COMPLETE
+
+PHASE-02 Data Preparation               COMPLETE
+
+PHASE-03 Feature Engineering            COMPLETE
+
+PHASE-04 EDA Analysis                   COMPLETE
+
+PHASE-05 Machine Learning Engineering   COMPLETE
+
+PHASE-06 Anomaly Detection Engine       COMPLETE
+
+PHASE-07 Forecasting Engine             COMPLETE
+
+
+NEXT:
+
+PHASE-08 Sustainability Intelligence
+
+
+================================================================================
+
+"""
+
+
+
+with open(
+
+    PHASE07_REPORT_DIR /
+
+    "PHASE_07_COMPLETION_REPORT.txt",
+
+    "w"
+
+) as file:
+
+
+    file.write(
+
+        completion_report
+
+    )
+
+
+
+# ================================================================
+# 6. Recovery Log
+# ================================================================
+
+
+recovery_log = """
+
+================================================================================
+PHASE-07 RECOVERY INSTRUCTIONS
+================================================================================
+
+
+After Google Colab Restart:
+
+
+STEP-01
+
+Mount Google Drive
+
+
+from google.colab import drive
+
+drive.mount('/content/drive')
+
+
+
+STEP-02
+
+Navigate Project Root
+
+
+/content/drive/MyDrive/GitHub_Project_01
+
+
+
+STEP-03
+
+Verify folders:
+
+
+models/
+
+processed/
+
+reports/
+
+plots/
+
+
+
+STEP-04
+
+Load:
+
+
+Forecast Models
+
+Forecast Files
+
+Reports
+
+Visualization Assets
+
+
+
+STEP-05
+
+Continue Development:
+
+
+PHASE-08
+
+Sustainability Intelligence Engine
+
+
+
+================================================================================
+
+"""
+
+
+
+with open(
+
+    PHASE07_REPORT_DIR /
+
+    "phase07_recovery_log.txt",
+
+    "w"
+
+) as file:
+
+
+    file.write(
+
+        recovery_log
+
+    )
+
+
+
+# ================================================================
+# 7. Final Completion Message
+# ================================================================
+
+
+print("\n" + "="*80)
+
+print(
+"PHASE-07 TIME-SERIES FORECASTING ENGINE COMPLETED"
+)
+
+print("="*80)
+
+
+print()
+
+
+print(
+"Generated:"
+)
+
+print(
+
+PHASE07_REPORT_DIR
+
+)
+
+
+print()
+
+print(
+"READY FOR PHASE-08"
+)
+
+print(
+"SUSTAINABILITY INTELLIGENCE ENGINE"
+)
+
+
+
