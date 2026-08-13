@@ -1,0 +1,704 @@
+# ============================================================
+# PHASE-15 — CELL-1
+# PROJECT VERIFICATION
+# ============================================================
+
+from pathlib import Path
+
+PROJECT_ROOT = Path(
+    "/content/drive/MyDrive/GitHub_Project_01"
+)
+
+MODEL_PATH = (
+    PROJECT_ROOT /
+    "models/forecasting/xgboost_forecast_model.pkl"
+)
+
+XAI_PATH = (
+    PROJECT_ROOT /
+    "processed/phase11_xai/xai_test_feature_dataset.parquet"
+)
+
+PHASE14_PATH = (
+    PROJECT_ROOT /
+    "processed/phase14_inference/"
+    "phase14_inference_predictions.parquet"
+)
+
+assert PROJECT_ROOT.exists()
+assert MODEL_PATH.exists()
+assert XAI_PATH.exists()
+assert PHASE14_PATH.exists()
+
+print("=" * 60)
+print("PHASE-15 PROJECT VERIFICATION")
+print("=" * 60)
+
+print("Project root: PASS")
+print("XGBoost model: PASS")
+print("XAI dataset: PASS")
+print("Phase-14 inference: PASS")
+
+print("\n🟢 CELL-1: PASS")
+
+# ============================================================
+# PHASE-15 — CELL-2
+# DEPLOYMENT STRUCTURE
+# ============================================================
+
+API_DIR = PROJECT_ROOT / "api"
+REPORT_DIR = PROJECT_ROOT / "reports/phase15_deployment"
+
+API_DIR.mkdir(parents=True, exist_ok=True)
+REPORT_DIR.mkdir(parents=True, exist_ok=True)
+
+(API_DIR / "__init__.py").touch()
+
+print("=" * 60)
+print("DEPLOYMENT STRUCTURE")
+print("=" * 60)
+
+print("api/: PASS")
+print("reports/phase15_deployment/: PASS")
+
+print("\n🟢 CELL-2: PASS")
+
+
+
+# ============================================================
+# PHASE-15 — CELL-3
+# LIGHTWEIGHT API DEPENDENCIES
+# ============================================================
+
+!pip -q install fastapi httpx uvicorn
+
+
+# ============================================================
+# PHASE-15 — CELL-4
+# CREATE FASTAPI INFERENCE API
+# ============================================================
+
+api_code = r'''
+from pathlib import Path
+
+import joblib
+import numpy as np
+
+from fastapi import FastAPI
+from pydantic import BaseModel
+
+
+PROJECT_ROOT = Path(
+    "/content/drive/MyDrive/GitHub_Project_01"
+)
+
+MODEL_PATH = (
+    PROJECT_ROOT /
+    "models/forecasting/xgboost_forecast_model.pkl"
+)
+
+FEATURES = [
+    "year",
+    "month",
+    "day",
+    "weekday",
+    "week_of_year",
+    "is_weekend",
+    "lag_1",
+    "lag_7",
+    "lag_14",
+    "lag_30",
+    "rolling_7",
+    "rolling_30",
+    "rolling_std_30"
+]
+
+model = joblib.load(MODEL_PATH)
+
+app = FastAPI(
+    title="Sustainable Infrastructure Intelligence API",
+    version="1.0.0"
+)
+
+
+class PredictionRequest(BaseModel):
+
+    year: int
+    month: int
+    day: int
+    weekday: int
+    week_of_year: int
+    is_weekend: int
+
+    lag_1: float
+    lag_7: float
+    lag_14: float
+    lag_30: float
+
+    rolling_7: float
+    rolling_30: float
+    rolling_std_30: float
+
+
+@app.get("/")
+def root():
+
+    return {
+        "project":
+            "Sustainable Infrastructure Intelligence Platform",
+        "status": "online",
+        "service": "energy forecasting API"
+    }
+
+
+@app.get("/health")
+def health():
+
+    return {
+        "status": "healthy",
+        "model": "XGBRegressor",
+        "features": len(FEATURES)
+    }
+
+
+@app.post("/predict")
+def predict(request: PredictionRequest):
+
+    values = [
+        getattr(request, feature)
+        for feature in FEATURES
+    ]
+
+    X = np.array(
+        [values],
+        dtype=float
+    )
+
+    prediction = float(
+        model.predict(X)[0]
+    )
+
+    return {
+        "predicted_energy": prediction,
+        "unit": "kWh"
+    }
+'''
+
+
+API_PATH = API_DIR / "main.py"
+
+API_PATH.write_text(api_code)
+
+assert API_PATH.exists()
+
+print("=" * 60)
+print("FASTAPI APPLICATION")
+print("=" * 60)
+
+print(API_PATH)
+print("\n🟢 CELL-4: PASS")
+
+# ============================================================
+# PHASE-15 — CELL-5
+# API TEST CLIENT
+# ============================================================
+
+import sys
+
+sys.path.insert(
+    0,
+    str(PROJECT_ROOT)
+)
+
+from fastapi.testclient import TestClient
+from api.main import app
+
+client = TestClient(app)
+
+# Health test
+health_response = client.get(
+    "/health"
+)
+
+assert health_response.status_code == 200
+
+print("=" * 60)
+print("API HEALTH TEST")
+print("=" * 60)
+
+print(health_response.json())
+
+print("\n🟢 Health endpoint: PASS")
+
+# ============================================================
+# PHASE-15 — CELL-6
+# REAL INFERENCE TEST
+# ============================================================
+
+import pandas as pd
+
+xai_df = pd.read_parquet(
+    XAI_PATH
+)
+
+FEATURES = [
+    "year",
+    "month",
+    "day",
+    "weekday",
+    "week_of_year",
+    "is_weekend",
+    "lag_1",
+    "lag_7",
+    "lag_14",
+    "lag_30",
+    "rolling_7",
+    "rolling_30",
+    "rolling_std_30"
+]
+
+row = xai_df.iloc[0]
+
+payload = {
+    feature: float(row[feature])
+    for feature in FEATURES
+}
+
+# Convert integer-like fields
+for feature in [
+    "year",
+    "month",
+    "day",
+    "weekday",
+    "week_of_year",
+    "is_weekend"
+]:
+    payload[feature] = int(payload[feature])
+
+
+response = client.post(
+    "/predict",
+    json=payload
+)
+
+assert response.status_code == 200
+
+result = response.json()
+
+prediction = result[
+    "predicted_energy"
+]
+
+assert np.isfinite(prediction)
+
+print("=" * 60)
+print("API PREDICTION TEST")
+print("=" * 60)
+
+print("Status:", response.status_code)
+print("Prediction:", prediction)
+print("Unit:", result["unit"])
+
+print("\n🟢 Prediction endpoint: PASS")
+
+# ============================================================
+# PHASE-15 — CELL-7
+# PHASE-14 ↔ API CROSS-VALIDATION
+# ============================================================
+
+import pandas as pd
+import numpy as np
+
+phase14_df = pd.read_parquet(
+    PHASE14_PATH
+)
+
+expected_prediction = float(
+    phase14_df.iloc[0]["prediction"]
+)
+
+difference = abs(
+    prediction - expected_prediction
+)
+
+print("=" * 60)
+print("PHASE-14 ↔ API CROSS-VALIDATION")
+print("=" * 60)
+
+print("API prediction:")
+print(prediction)
+
+print("\nPhase-14 prediction:")
+print(expected_prediction)
+
+print("\nAbsolute difference:")
+print(difference)
+
+assert np.isfinite(prediction)
+assert np.isfinite(expected_prediction)
+assert difference < 1e-3
+
+print("\n🟢 CELL-7: PASS")
+
+# ============================================================
+# PHASE-15 — CELL-8
+# INPUT VALIDATION TEST
+# ============================================================
+
+bad_response = client.post(
+    "/predict",
+    json={}
+)
+
+print("=" * 60)
+print("API INPUT VALIDATION")
+print("=" * 60)
+
+print(
+    "Invalid request status:",
+    bad_response.status_code
+)
+
+assert bad_response.status_code == 422
+
+print("\n🟢 Input validation: PASS")
+
+# ============================================================
+# PHASE-15 — CELL-9
+# REQUIREMENTS
+# ============================================================
+
+requirements = """fastapi
+uvicorn
+pydantic
+numpy
+joblib
+scikit-learn
+xgboost
+"""
+
+(PROJECT_ROOT / "requirements.txt").write_text(
+    requirements
+)
+
+print("=" * 60)
+print("REQUIREMENTS")
+print("=" * 60)
+
+print(requirements)
+
+print("🟢 requirements.txt: PASS")
+
+# ============================================================
+# PHASE-15 — CELL-10
+# DOCKERFILE
+# ============================================================
+
+dockerfile = """FROM python:3.12-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY api ./api
+COPY models ./models
+
+EXPOSE 8000
+
+CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+"""
+
+(PROJECT_ROOT / "Dockerfile").write_text(
+    dockerfile
+)
+
+assert (
+    PROJECT_ROOT / "Dockerfile"
+).exists()
+
+print("=" * 60)
+print("DOCKER PACKAGING")
+print("=" * 60)
+
+print("Dockerfile: PASS")
+
+print("\n🟢 CELL-10: PASS")
+
+# ============================================================
+# PHASE-15 — CELL-11
+# GITHUB GITIGNORE
+# ============================================================
+
+gitignore = """__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+.env
+*.log
+
+mlflow.db
+mlruns/
+
+.DS_Store
+"""
+
+(PROJECT_ROOT / ".gitignore").write_text(
+    gitignore
+)
+
+print("=" * 60)
+print("GITHUB PACKAGING")
+print("=" * 60)
+
+print(".gitignore: PASS")
+
+# ============================================================
+# PHASE-15 — CELL-12
+# README
+# ============================================================
+
+readme = """# Sustainable Infrastructure Intelligence Platform
+
+An end-to-end ML platform for energy forecasting, sustainability
+intelligence, explainable AI, RAG-based assistance, automated reporting,
+interactive dashboards, and production-style inference.
+
+## Architecture
+
+Data
+→ Sustainability Intelligence
+→ Forecasting
+→ XAI
+→ RAG
+→ Reporting
+→ Streamlit Dashboard
+→ MLflow
+→ FastAPI Inference API
+
+## Key Results
+
+- 1,578 buildings
+- 1,153,518 daily records
+- 24.587B kWh total energy
+- 8.391M tCO2e net carbon
+- $2.705B estimated net energy cost
+- XGBoost forecasting
+- MAE: 6087.63
+- RMSE: 8492.06
+- R²: 0.7681
+
+## MLOps
+
+- MLflow experiment tracking
+- SQLite tracking backend
+- Reproducible feature contract
+- Versioned inference artifact
+- FastAPI prediction endpoint
+- Automated API validation
+
+## API
+
+### Health
+
+GET `/health`
+
+### Prediction
+
+POST `/predict`
+
+The prediction endpoint validates the 13-feature forecasting
+contract before generating an energy prediction.
+
+## Testing
+
+The API is tested directly in Google Colab using FastAPI TestClient.
+No external API testing software is required.
+
+## Deployment
+
+A Dockerfile is included for container-ready deployment.
+
+## Technology
+
+Python, Pandas, NumPy, Scikit-learn, XGBoost, SHAP,
+LangChain, FAISS, Transformers, MLflow, FastAPI,
+Plotly, Streamlit.
+
+## Project Status
+
+Phase-15 complete.
+"""
+
+(PROJECT_ROOT / "README.md").write_text(
+    readme
+)
+
+print("=" * 60)
+print("README")
+print("=" * 60)
+
+print("README.md: PASS")
+
+# ============================================================
+# PHASE-15 — CELL-13
+# FINAL ARTIFACT INVENTORY
+# ============================================================
+
+artifacts = {
+    "api": API_PATH,
+    "requirements": PROJECT_ROOT / "requirements.txt",
+    "dockerfile": PROJECT_ROOT / "Dockerfile",
+    "gitignore": PROJECT_ROOT / ".gitignore",
+    "readme": PROJECT_ROOT / "README.md",
+    "phase14_inference": PHASE14_PATH
+}
+
+results = {}
+
+for name, path in artifacts.items():
+
+    results[name] = path.exists()
+
+    print(
+        f"{name}:",
+        "PASS" if path.exists()
+        else "FAIL"
+    )
+
+assert all(results.values())
+
+print("\n🟢 ARTIFACT INVENTORY: PASS")
+
+# ============================================================
+# PHASE-15 — CELL-14
+# FINAL VALIDATION
+# ============================================================
+
+import json
+
+validation = {
+
+    "phase": "Phase-15",
+
+    "status": "PASS",
+
+    "api": {
+        "file_exists": API_PATH.exists(),
+        "health_status":
+            health_response.status_code,
+        "prediction_status":
+            response.status_code,
+        "invalid_request_status":
+            bad_response.status_code
+    },
+
+    "prediction": {
+        "finite": bool(
+            np.isfinite(prediction)
+        ),
+        "phase14_match": bool(
+            difference < 1e-3
+        ),
+        "absolute_difference":
+            float(difference)
+    },
+
+    "packaging": {
+        "requirements":
+            (PROJECT_ROOT / "requirements.txt").exists(),
+        "dockerfile":
+            (PROJECT_ROOT / "Dockerfile").exists(),
+        "gitignore":
+            (PROJECT_ROOT / ".gitignore").exists(),
+        "readme":
+            (PROJECT_ROOT / "README.md").exists()
+    }
+}
+
+VALIDATION_PATH = (
+    REPORT_DIR /
+    "phase15_final_validation.json"
+)
+
+with open(
+    VALIDATION_PATH,
+    "w"
+) as f:
+
+    json.dump(
+        validation,
+        f,
+        indent=2
+    )
+
+print("=" * 60)
+print("PHASE-15 VALIDATION")
+print("=" * 60)
+
+print(
+    "Validation report:",
+    VALIDATION_PATH
+)
+
+print("\n🟢 CELL-14: PASS")
+
+# ============================================================
+# PHASE-15 — FINAL COMPLETION GATE
+# ============================================================
+
+final_pass = (
+
+    API_PATH.exists()
+    and health_response.status_code == 200
+    and response.status_code == 200
+    and bad_response.status_code == 422
+    and np.isfinite(prediction)
+    and difference < 1e-3
+    and (PROJECT_ROOT / "requirements.txt").exists()
+    and (PROJECT_ROOT / "Dockerfile").exists()
+    and (PROJECT_ROOT / ".gitignore").exists()
+    and (PROJECT_ROOT / "README.md").exists()
+    and VALIDATION_PATH.exists()
+)
+
+print("=" * 60)
+print("PHASE-15 FINAL COMPLETION GATE")
+print("=" * 60)
+
+print("API: PASS")
+print("Health endpoint: PASS")
+print("Prediction endpoint: PASS")
+print("Input validation: PASS")
+print(
+    "Phase-14 cross-validation:",
+    "PASS" if difference < 1e-3 else "FAIL"
+)
+print("Requirements: PASS")
+print("Dockerfile: PASS")
+print("GitHub .gitignore: PASS")
+print("README: PASS")
+print("Validation report: PASS")
+
+print("\n" + "=" * 60)
+
+if final_pass:
+
+    print("🟢 PHASE-15 COMPLETE — PASS")
+
+    print("\nCompleted:")
+    print("✓ FastAPI inference API")
+    print("✓ Health endpoint")
+    print("✓ Prediction endpoint")
+    print("✓ Input validation")
+    print("✓ Phase-14 inference consistency")
+    print("✓ GitHub packaging")
+    print("✓ Deployment configuration")
+    print("✓ Machine-readable validation")
+
+else:
+
+    print("🔴 PHASE-15 FAIL")
+
+print("=" * 60)
