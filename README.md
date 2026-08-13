@@ -517,19 +517,10 @@ It therefore provides a practical engineering implementation across multiple are
 
 ---
 
-# Author
+# Author : Arun Deepak Akunuri 
 
 **AI/ML Engineering Portfolio Project**
 
 **Domain:** Sustainable Infrastructure Intelligence
 **Focus:** AI Engineering • Machine Learning • RAG • Generative AI • XAI • MLOps • Deployment
 
----
-
-## Project Status
-
-**🟢 TECHNICALLY COMPLETE — 94/94**
-
-**🟡 PORTFOLIO PRESENTATION — IN PROGRESS**
-
-The technical system has completed its major engineering and validation phases. The remaining work is focused on presenting the system as a professional, reproducible, hiring-ready AI engineering portfolio.
