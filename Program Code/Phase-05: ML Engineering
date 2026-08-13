@@ -1,0 +1,1630 @@
+# ============================================================
+# Sustainable Infrastructure Intelligence Platform
+#
+# Phase-05 : Machine Learning Engineering
+#
+# Part-01 :
+# ML Pipeline Initialization
+#
+# Objective:
+# Predict infrastructure electricity consumption
+#
+# Dataset:
+# Building Data Genome Project 2
+# ============================================================
+import os
+import warnings
+
+warnings.filterwarnings("ignore")
+
+
+import numpy as np
+import pandas as pd
+
+
+from sklearn.model_selection import train_test_split
+
+
+print("Libraries Imported Successfully")
+PROJECT_PATH = "/content/drive/MyDrive/GitHub_Project_01"
+
+FEATURE_STORE = (
+    f"{PROJECT_PATH}/processed/"
+    "feature_store/"
+    "sustainable_feature_store.parquet"
+)
+
+
+df_ml = pd.read_parquet(
+    FEATURE_STORE
+)
+
+
+print("Feature Store Loaded")
+print("Shape:", df_ml.shape)
+TARGET = "electricity"
+
+
+if TARGET in df_ml.columns:
+    print("Target variable available:", TARGET)
+
+else:
+    raise Exception(
+        "Target variable not found"
+    )
+df_ml["date"] = pd.to_datetime(
+    df_ml["date"]
+)
+
+
+print(
+    df_ml["date"].min()
+)
+
+print(
+    df_ml["date"].max()
+)
+
+time_features = [
+    "year",
+    "month",
+    "day",
+    "weekday",
+    "is_weekend",
+    "season"
+]
+
+lag_features = [
+    "lag_1",
+    "lag_7",
+    "rolling_7",
+    "rolling_30"
+]
+
+building_features = [
+    "building_type",
+    "primaryspaceusage",
+    "sub_primaryspaceusage",
+    "sqm",
+    "sqft",
+    "numberoffloors",
+    "occupants",
+    "yearbuilt"
+]
+
+weather_features = [
+    "airTemperature",
+    "dewTemperature",
+    "windSpeed",
+    "windDirection",
+    "cloudCoverage",
+    "precipDepth1HR",
+    "precipDepth6HR",
+    "heating_degree_days",
+    "cooling_degree_days",
+    "temperature_diff"
+]
+
+sustainability_features = [
+    "eui",
+    "site_eui",
+    "source_eui",
+    "energystarscore",
+    "leed_level"
+]
+
+FEATURES = (
+    time_features
+    +
+    lag_features
+    +
+    building_features
+    +
+    weather_features
+    +
+    sustainability_features
+)
+
+
+print(
+    "Total ML Features:",
+    len(FEATURES)
+)
+
+missing_features = [
+    col for col in FEATURES
+    if col not in df_ml.columns
+]
+
+
+if len(missing_features)==0:
+
+    print(
+        "All features available"
+    )
+
+else:
+
+    print(
+        "Missing Features:"
+    )
+
+    print(
+        missing_features
+    )
+
+ml_data = (
+    df_ml[
+        FEATURES
+        +
+        [
+            TARGET,
+            "date"
+        ]
+    ]
+    .copy()
+)
+
+
+print(
+    ml_data.shape
+)
+
+missing_report = (
+    ml_data
+    .isnull()
+    .sum()
+    .sort_values(
+        ascending=False
+    )
+)
+
+
+missing_report.head(20)
+
+ml_data = (
+    ml_data
+    .sort_values(
+        "date"
+    )
+    .reset_index(
+        drop=True
+    )
+)
+
+
+ml_data.head()
+
+train_data = ml_data[
+    ml_data["date"]
+    <
+    "2017-01-01"
+]
+
+
+validation_data = ml_data[
+    (
+        ml_data["date"]
+        >=
+        "2017-01-01"
+    )
+    &
+    (
+        ml_data["date"]
+        <
+        "2017-07-01"
+    )
+]
+
+
+test_data = ml_data[
+    ml_data["date"]
+    >=
+    "2017-07-01"
+]
+
+
+print(
+    "Train:",
+    train_data.shape
+)
+
+
+print(
+    "Validation:",
+    validation_data.shape
+)
+
+
+print(
+    "Test:",
+    test_data.shape
+)
+
+X_train = train_data[FEATURES]
+
+y_train = train_data[TARGET]
+
+
+X_val = validation_data[FEATURES]
+
+y_val = validation_data[TARGET]
+
+
+X_test = test_data[FEATURES]
+
+y_test = test_data[TARGET]
+
+
+print(
+    "ML datasets created"
+)
+
+print("="*70)
+print("PHASE-05 PART-01 ML DATASET SUMMARY")
+print("="*70)
+
+
+print(
+    "Features:",
+    len(FEATURES)
+)
+
+
+print(
+    "Training Samples:",
+    len(X_train)
+)
+
+
+print(
+    "Validation Samples:",
+    len(X_val)
+)
+
+
+print(
+    "Testing Samples:",
+    len(X_test)
+)
+
+
+print(
+    "Target:",
+    TARGET
+)
+
+
+print("="*70)
+
+ML_PATH = (
+    f"{PROJECT_PATH}/processed/"
+    "ml_dataset"
+)
+
+
+os.makedirs(
+    ML_PATH,
+    exist_ok=True
+)
+
+
+X_train.to_parquet(
+    f"{ML_PATH}/X_train.parquet"
+)
+
+X_val.to_parquet(
+    f"{ML_PATH}/X_validation.parquet"
+)
+
+X_test.to_parquet(
+    f"{ML_PATH}/X_test.parquet"
+)
+
+
+y_train.to_frame().to_parquet(
+    f"{ML_PATH}/y_train.parquet"
+)
+
+y_val.to_frame().to_parquet(
+    f"{ML_PATH}/y_validation.parquet"
+)
+
+y_test.to_frame().to_parquet(
+    f"{ML_PATH}/y_test.parquet"
+)
+
+
+print(
+    "ML datasets saved successfully"
+)
+
+print("="*75)
+print("PHASE-05 PART-01 COMPLETE")
+print("="*75)
+
+print(
+    f"""
+Problem:
+Electricity Consumption Prediction
+
+Dataset:
+Building Data Genome Project 2
+
+Samples:
+{len(ml_data):,}
+
+Features:
+{len(FEATURES)}
+
+Split Strategy:
+Time-based
+
+Train Period:
+2016
+
+Validation Period:
+Jan-Jun 2017
+
+Test Period:
+Jul-Dec 2017
+
+Status:
+READY FOR MODEL TRAINING
+"""
+)
+
+print("="*75)
+
+# ============================================================
+# FEATURE TYPE IDENTIFICATION (CORRECTED)
+# ============================================================
+
+
+force_numeric = [
+    "eui",
+    "site_eui",
+    "source_eui",
+    "energystarscore"
+]
+
+
+numeric_features = (
+    X_train
+    .select_dtypes(
+        include=[
+            "int64",
+            "float64"
+        ]
+    )
+    .columns
+    .tolist()
+)
+
+
+for col in force_numeric:
+    if col in X_train.columns:
+        if col not in numeric_features:
+            numeric_features.append(col)
+
+
+categorical_features = [
+    col for col in X_train.columns
+    if col not in numeric_features
+]
+
+
+print("="*60)
+
+print(
+    "Numerical Features:",
+    len(numeric_features)
+)
+
+print(numeric_features)
+
+
+print(
+    "\nCategorical Features:",
+    len(categorical_features)
+)
+
+print(categorical_features)
+
+print("="*60)
+
+# ============================================================
+# CLEAN NUMERIC SUSTAINABILITY FEATURES
+# ============================================================
+
+numeric_conversion_features = [
+    "eui",
+    "site_eui",
+    "source_eui",
+    "energystarscore"
+]
+
+
+for col in numeric_conversion_features:
+
+    if col in X_train.columns:
+
+        X_train[col] = pd.to_numeric(
+            X_train[col],
+            errors="coerce"
+        )
+
+        X_val[col] = pd.to_numeric(
+            X_val[col],
+            errors="coerce"
+        )
+
+        X_test[col] = pd.to_numeric(
+            X_test[col],
+            errors="coerce"
+        )
+
+
+print("Numeric sustainability features cleaned")
+
+# ============================================================
+# UPDATED FEATURE TYPE IDENTIFICATION
+# ============================================================
+
+
+numeric_features = (
+    X_train
+    .select_dtypes(
+        include=[
+            "int64",
+            "float64"
+        ]
+    )
+    .columns
+    .tolist()
+)
+
+
+categorical_features = [
+    col for col in X_train.columns
+    if col not in numeric_features
+]
+
+
+print("="*60)
+
+print(
+    "Numerical Features:",
+    len(numeric_features)
+)
+
+print(numeric_features)
+
+
+print(
+    "\nCategorical Features:",
+    len(categorical_features)
+)
+
+print(categorical_features)
+
+print("="*60)
+
+from sklearn.pipeline import Pipeline
+from sklearn.compose import ColumnTransformer
+
+from sklearn.preprocessing import (
+    StandardScaler,
+    OneHotEncoder
+)
+
+from sklearn.impute import SimpleImputer
+
+
+print(
+    "Preprocessing libraries imported"
+)
+
+numeric_pipeline = Pipeline(
+    steps=[
+        (
+            "imputer",
+            SimpleImputer(
+                strategy="median"
+            )
+        ),
+        (
+            "scaler",
+            StandardScaler()
+        )
+    ]
+)
+
+
+print(
+    "Numeric pipeline created"
+)
+
+categorical_pipeline = Pipeline(
+    steps=[
+        (
+            "imputer",
+            SimpleImputer(
+                strategy="most_frequent"
+            )
+        ),
+        (
+            "encoder",
+            OneHotEncoder(
+                handle_unknown="ignore"
+            )
+        )
+    ]
+)
+
+
+print(
+    "Categorical pipeline created"
+)
+
+preprocessor = ColumnTransformer(
+    transformers=[
+        (
+            "num",
+            numeric_pipeline,
+            numeric_features
+        ),
+
+        (
+            "cat",
+            categorical_pipeline,
+            categorical_features
+        )
+    ]
+)
+
+
+print(
+    "Complete preprocessing pipeline created"
+)
+
+X_train_processed = (
+    preprocessor
+    .fit_transform(
+        X_train
+    )
+)
+
+
+print(
+    "Training data transformed"
+)
+
+
+print(
+    "Processed Shape:",
+    X_train_processed.shape
+)
+
+X_val_processed = (
+    preprocessor
+    .transform(
+        X_val
+    )
+)
+
+
+X_test_processed = (
+    preprocessor
+    .transform(
+        X_test
+    )
+)
+
+
+print(
+    "Validation Shape:",
+    X_val_processed.shape
+)
+
+
+print(
+    "Test Shape:",
+    X_test_processed.shape
+)
+
+import joblib
+
+
+MODEL_PATH = (
+    "/content/drive/MyDrive/"
+    "GitHub_Project_01/"
+    "models"
+)
+
+
+os.makedirs(
+    MODEL_PATH,
+    exist_ok=True
+)
+
+
+joblib.dump(
+    preprocessor,
+    f"{MODEL_PATH}/preprocessor.pkl"
+)
+
+
+print(
+    "Preprocessor saved successfully"
+)
+
+print("="*70)
+print("PHASE-05 PART-02 PREPROCESSING SUMMARY")
+print("="*70)
+
+
+print(
+    "Original Features:",
+    len(FEATURES)
+)
+
+
+print(
+    "Numerical Features:",
+    len(numeric_features)
+)
+
+
+print(
+    "Categorical Features:",
+    len(categorical_features)
+)
+
+
+print(
+    "Processed Train Shape:",
+    X_train_processed.shape
+)
+
+
+print(
+    "Processed Validation Shape:",
+    X_val_processed.shape
+)
+
+
+print(
+    "Processed Test Shape:",
+    X_test_processed.shape
+)
+
+
+print(
+    "Pipeline Saved:",
+    "preprocessor.pkl"
+)
+
+
+print("="*70)
+print("STATUS: READY FOR MODEL TRAINING")
+print("="*70)
+
+# ============================================================
+# PHASE-05 PART-03
+# BASELINE MACHINE LEARNING MODELS
+# ============================================================
+
+
+from sklearn.linear_model import (
+    LinearRegression,
+    Ridge
+)
+
+from sklearn.ensemble import (
+    RandomForestRegressor
+)
+
+
+from sklearn.metrics import (
+    mean_absolute_error,
+    mean_squared_error,
+    r2_score
+)
+
+
+import time
+
+
+print("ML libraries imported")
+
+def evaluate_model(
+    model_name,
+    model,
+    X_train,
+    y_train,
+    X_val,
+    y_val
+):
+
+    start_time = time.time()
+
+
+    # Training
+
+    model.fit(
+        X_train,
+        y_train
+    )
+
+
+    training_time = (
+        time.time()
+        -
+        start_time
+    )
+
+
+    # Prediction
+
+    predictions = (
+        model.predict(
+            X_val
+        )
+    )
+
+
+    # Metrics
+
+    mae = mean_absolute_error(
+        y_val,
+        predictions
+    )
+
+
+    rmse = np.sqrt(
+        mean_squared_error(
+            y_val,
+            predictions
+        )
+    )
+
+
+    r2 = r2_score(
+        y_val,
+        predictions
+    )
+
+
+    results = {
+
+        "Model": model_name,
+
+        "MAE": mae,
+
+        "RMSE": rmse,
+
+        "R2_Score": r2,
+
+        "Training_Time_sec": training_time
+    }
+
+
+    return (
+        results,
+        predictions
+    )
+
+linear_model = LinearRegression()
+
+
+linear_results, linear_predictions = evaluate_model(
+    "Linear Regression",
+    linear_model,
+    X_train_processed,
+    y_train,
+    X_val_processed,
+    y_val
+)
+
+
+linear_results
+
+ridge_model = Ridge(
+    alpha=1.0
+)
+
+
+ridge_results, ridge_predictions = evaluate_model(
+    "Ridge Regression",
+    ridge_model,
+    X_train_processed,
+    y_train,
+    X_val_processed,
+    y_val
+)
+
+
+ridge_results
+
+# ============================================================
+# RANDOM FOREST BASELINE (OPTIMIZED)
+# ============================================================
+
+rf_model = RandomForestRegressor(
+
+    n_estimators=50,
+
+    max_depth=12,
+
+    min_samples_split=20,
+
+    min_samples_leaf=5,
+
+    max_features="sqrt",
+
+    random_state=42,
+
+    n_jobs=-1
+
+)
+
+
+rf_results, rf_predictions = evaluate_model(
+    "Random Forest Optimized",
+    rf_model,
+    X_train_processed,
+    y_train,
+    X_val_processed,
+    y_val
+)
+
+
+rf_results
+
+baseline_results = pd.DataFrame(
+    [
+        linear_results,
+        ridge_results,
+        rf_results
+    ]
+)
+
+
+baseline_results
+
+baseline_results_sorted = (
+    baseline_results
+    .sort_values(
+        "RMSE"
+    )
+)
+
+
+baseline_results_sorted
+
+fig = px.bar(
+    baseline_results_sorted,
+    x="Model",
+    y="RMSE",
+    color="Model",
+    title="Baseline Model RMSE Comparison",
+    template="plotly_white"
+)
+
+
+fig.show()
+
+REPORT_PATH = (
+    "/content/drive/MyDrive/"
+    "GitHub_Project_01/"
+    "reports"
+)
+
+
+os.makedirs(
+    REPORT_PATH,
+    exist_ok=True
+)
+
+
+baseline_results_sorted.to_csv(
+    f"{REPORT_PATH}/baseline_model_results.csv",
+    index=False
+)
+
+
+print(
+    "Baseline results saved"
+)
+
+
+print("="*75)
+print("PHASE-05 PART-03 COMPLETE")
+print("="*75)
+
+
+print(
+    """
+Models Trained:
+
+✓ Linear Regression
+✓ Ridge Regression
+✓ Random Forest Regressor
+
+
+Evaluation Metrics:
+
+✓ MAE
+✓ RMSE
+✓ R2 Score
+✓ Training Time
+
+
+Output:
+
+baseline_model_results.csv
+
+
+Next:
+
+Phase-05 Part-04
+Advanced ML Models
+
+✓ XGBoost
+✓ LightGBM
+✓ Hyperparameter Optimization
+
+"""
+)
+
+
+print("="*75)
+
+# ============================================================
+# ADVANCED ML LIBRARIES
+# ============================================================
+
+!pip install xgboost lightgbm -q
+
+print("XGBoost and LightGBM installed")
+
+# ============================================================
+# IMPORT ADVANCED MODELS
+# ============================================================
+
+from xgboost import XGBRegressor
+
+from lightgbm import LGBMRegressor
+
+
+print("Advanced ML models imported")
+
+def evaluate_advanced_model(
+    model_name,
+    model,
+    X_train,
+    y_train,
+    X_val,
+    y_val
+):
+
+    start_time = time.time()
+
+
+    model.fit(
+        X_train,
+        y_train
+    )
+
+
+    training_time = (
+        time.time()
+        -
+        start_time
+    )
+
+
+    predictions = model.predict(
+        X_val
+    )
+
+
+    mae = mean_absolute_error(
+        y_val,
+        predictions
+    )
+
+
+    rmse = np.sqrt(
+        mean_squared_error(
+            y_val,
+            predictions
+        )
+    )
+
+
+    r2 = r2_score(
+        y_val,
+        predictions
+    )
+
+
+    results = {
+
+        "Model": model_name,
+
+        "MAE": mae,
+
+        "RMSE": rmse,
+
+        "R2_Score": r2,
+
+        "Training_Time_sec": training_time
+
+    }
+
+
+    return results, predictions, model
+
+def evaluate_advanced_model(
+    model_name,
+    model,
+    X_train,
+    y_train,
+    X_val,
+    y_val
+):
+
+    start_time = time.time()
+
+
+    model.fit(
+        X_train,
+        y_train
+    )
+
+
+    training_time = (
+        time.time()
+        -
+        start_time
+    )
+
+
+    predictions = model.predict(
+        X_val
+    )
+
+
+    mae = mean_absolute_error(
+        y_val,
+        predictions
+    )
+
+
+    rmse = np.sqrt(
+        mean_squared_error(
+            y_val,
+            predictions
+        )
+    )
+
+
+    r2 = r2_score(
+        y_val,
+        predictions
+    )
+
+
+    results = {
+
+        "Model": model_name,
+
+        "MAE": mae,
+
+        "RMSE": rmse,
+
+        "R2_Score": r2,
+
+        "Training_Time_sec": training_time
+
+    }
+
+
+    return results, predictions, model
+
+# ============================================================
+# OPTIMIZED LIGHTGBM MODEL
+# ============================================================
+
+
+lgbm_model = LGBMRegressor(
+
+    n_estimators=300,
+
+    learning_rate=0.05,
+
+    num_leaves=64,
+
+    max_depth=10,
+
+    subsample=0.8,
+
+    colsample_bytree=0.8,
+
+    random_state=42,
+
+    n_jobs=-1
+
+)
+
+
+lgbm_results, lgbm_predictions, lgbm_model = (
+    evaluate_advanced_model(
+        "LightGBM",
+        lgbm_model,
+        X_train_processed,
+        y_train,
+        X_val_processed,
+        y_val
+    )
+)
+
+
+lgbm_results
+
+# ============================================================
+# OPTIMIZED XGBOOST MODEL
+# ============================================================
+
+
+xgb_model = XGBRegressor(
+
+    n_estimators=300,
+
+    learning_rate=0.05,
+
+    max_depth=8,
+
+    subsample=0.8,
+
+    colsample_bytree=0.8,
+
+    objective="reg:squarederror",
+
+    tree_method="hist",
+
+    random_state=42,
+
+    n_jobs=-1
+
+)
+
+
+xgb_results, xgb_predictions, xgb_model = (
+    evaluate_advanced_model(
+        "XGBoost",
+        xgb_model,
+        X_train_processed,
+        y_train,
+        X_val_processed,
+        y_val
+    )
+)
+
+
+xgb_results
+
+# ============================================================
+# COMPLETE MODEL COMPARISON
+# ============================================================
+
+
+advanced_results = pd.DataFrame(
+    [
+        xgb_results,
+        lgbm_results
+    ]
+)
+
+
+all_model_results = pd.concat(
+    [
+        baseline_results,
+        advanced_results
+    ],
+    ignore_index=True
+)
+
+
+all_model_results = (
+    all_model_results
+    .sort_values(
+        "RMSE"
+    )
+)
+
+
+all_model_results
+
+fig = px.bar(
+
+    all_model_results,
+
+    x="Model",
+
+    y="RMSE",
+
+    color="Model",
+
+    title="Complete ML Model Performance Comparison",
+
+    template="plotly_white"
+
+)
+
+
+fig.show()
+
+MODEL_REPORT_PATH = (
+    "/content/drive/MyDrive/"
+    "GitHub_Project_01/"
+    "reports"
+)
+
+
+all_model_results.to_csv(
+    f"{MODEL_REPORT_PATH}/ml_model_comparison.csv",
+    index=False
+)
+
+
+print(
+    "ML comparison report saved"
+)
+
+import joblib
+
+
+MODEL_PATH = (
+    "/content/drive/MyDrive/"
+    "GitHub_Project_01/"
+    "models"
+)
+
+
+joblib.dump(
+    xgb_model,
+    f"{MODEL_PATH}/xgboost_energy_model.pkl"
+)
+
+
+joblib.dump(
+    lgbm_model,
+    f"{MODEL_PATH}/lightgbm_energy_model.pkl"
+)
+
+
+print("Advanced models saved")
+
+importance = pd.DataFrame(
+
+    {
+        "Feature_Index":
+        range(
+            len(
+                xgb_model.feature_importances_
+            )
+        ),
+
+        "Importance":
+        xgb_model.feature_importances_
+    }
+
+)
+
+
+importance = (
+    importance
+    .sort_values(
+        "Importance",
+        ascending=False
+    )
+)
+
+
+importance.head(20)
+
+# ============================================================
+# SELECT BEST PERFORMING MODEL
+# ============================================================
+
+best_model_name = (
+    all_model_results
+    .iloc[0]["Model"]
+)
+
+
+print("="*70)
+print("BEST MODEL BASED ON RMSE")
+print("="*70)
+
+print(
+    best_model_name
+)
+
+print("="*70)
+
+# ============================================================
+# FINAL TEST EVALUATION
+# ============================================================
+
+
+final_predictions = (
+    xgb_model
+    .predict(
+        X_test_processed
+    )
+)
+
+
+test_mae = mean_absolute_error(
+    y_test,
+    final_predictions
+)
+
+
+test_rmse = np.sqrt(
+    mean_squared_error(
+        y_test,
+        final_predictions
+    )
+)
+
+
+test_r2 = r2_score(
+    y_test,
+    final_predictions
+)
+
+
+final_test_results = pd.DataFrame(
+    {
+        "Metric":
+        [
+            "MAE",
+            "RMSE",
+            "R2 Score"
+        ],
+
+        "Value":
+        [
+            test_mae,
+            test_rmse,
+            test_r2
+        ]
+    }
+)
+
+
+final_test_results
+
+# ============================================================
+# PREDICTION ANALYSIS DATAFRAME
+# ============================================================
+
+
+prediction_analysis = pd.DataFrame(
+    {
+        "Actual":
+        y_test.values,
+
+        "Predicted":
+        final_predictions
+    }
+)
+
+
+prediction_analysis["Error"] = (
+    prediction_analysis["Actual"]
+    -
+    prediction_analysis["Predicted"]
+)
+
+
+prediction_analysis.head()
+
+# ============================================================
+# ACTUAL VS PREDICTED
+# ============================================================
+
+
+fig = px.scatter(
+
+    prediction_analysis.sample(
+        5000,
+        random_state=42
+    ),
+
+    x="Actual",
+
+    y="Predicted",
+
+    title="Actual vs Predicted Electricity Consumption",
+
+    opacity=0.5,
+
+    template="plotly_white"
+
+)
+
+
+fig.show()
+
+# ============================================================
+# ERROR DISTRIBUTION
+# ============================================================
+
+
+fig = px.histogram(
+
+    prediction_analysis,
+
+    x="Error",
+
+    nbins=100,
+
+    title="Prediction Error Distribution",
+
+    template="plotly_white"
+
+)
+
+
+fig.show()
+
+# ============================================================
+# XGBOOST FEATURE IMPORTANCE
+# ============================================================
+
+
+feature_importance = pd.DataFrame(
+    {
+        "Feature":
+        range(
+            len(
+                xgb_model.feature_importances_
+            )
+        ),
+
+        "Importance":
+        xgb_model.feature_importances_
+    }
+)
+
+
+feature_importance = (
+    feature_importance
+    .sort_values(
+        "Importance",
+        ascending=False
+    )
+)
+
+
+feature_importance.head(20)
+
+# ============================================================
+# SHAP EXPLANATION SAMPLE
+# ============================================================
+
+
+X_sample = (
+    X_test_processed[:2000]
+)
+
+
+explainer = shap.TreeExplainer(
+    xgb_model
+)
+
+
+shap_values = (
+    explainer
+    .shap_values(
+        X_sample
+    )
+)
+
+
+print(
+    "SHAP values generated"
+)
+
+shap.summary_plot(
+    shap_values,
+    X_sample
+)
+
+# ============================================================
+# SAVE FINAL ML REPORT
+# ============================================================
+
+
+FINAL_REPORT_PATH = (
+    "/content/drive/MyDrive/"
+    "GitHub_Project_01/"
+    "reports"
+)
+
+
+final_test_results.to_csv(
+    f"{FINAL_REPORT_PATH}/final_test_results.csv",
+    index=False
+)
+
+
+feature_importance.to_csv(
+    f"{FINAL_REPORT_PATH}/feature_importance.csv",
+    index=False
+)
+
+
+print(
+    "Final ML reports saved"
+)
+
+print("="*85)
+
+print("""
+PHASE-05 ML ENGINEERING COMPLETE
+
+Dataset:
+Building Data Genome Project 2
+
+Task:
+Electricity Consumption Prediction
+
+
+Completed:
+
+✓ Feature Engineering
+✓ Time-Based Validation
+✓ ML Preprocessing Pipeline
+✓ Baseline Models
+✓ XGBoost Model
+✓ LightGBM Model
+✓ Test Evaluation
+✓ Error Analysis
+✓ Feature Importance
+✓ SHAP Explainability
+✓ Model Saving
+
+
+Generated Assets:
+
+models/
+
+✓ preprocessor.pkl
+✓ xgboost_energy_model.pkl
+✓ lightgbm_energy_model.pkl
+
+
+reports/
+
+✓ baseline_model_results.csv
+✓ ml_model_comparison.csv
+✓ final_test_results.csv
+✓ feature_importance.csv
+
+
+READY FOR:
+
+PHASE-06
+ANOMALY DETECTION ENGINE
+
+""")
+
+print("="*85)
+
