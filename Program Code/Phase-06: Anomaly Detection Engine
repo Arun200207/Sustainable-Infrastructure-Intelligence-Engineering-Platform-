@@ -1,0 +1,2968 @@
+# ==============================================================================
+# PHASE-06 : ANOMALY DETECTION ENGINE
+# PART-01 : LOAD FEATURE STORE & TRAINED MODELS (DYNAMIC VERSION)
+# ==============================================================================
+
+print("=" * 90)
+print("PHASE-06 : ANOMALY DETECTION ENGINE")
+print("PART-01 : LOAD FEATURE STORE & TRAINED MODELS")
+print("=" * 90)
+
+import warnings
+warnings.filterwarnings("ignore")
+
+import os
+import joblib
+import pandas as pd
+import numpy as np
+
+from pathlib import Path
+
+# ==============================================================================
+# Mount Google Drive (if required)
+# ==============================================================================
+
+try:
+    from google.colab import drive
+
+    if not os.path.exists("/content/drive/MyDrive"):
+        drive.mount("/content/drive")
+
+except:
+    pass
+
+# ==============================================================================
+# Google Drive Root
+# ==============================================================================
+
+DRIVE_ROOT = Path("/content/drive/MyDrive")
+
+if not DRIVE_ROOT.exists():
+    raise Exception("Google Drive is not mounted.")
+
+print("\nSearching Google Drive for project files...\n")
+
+# ==============================================================================
+# Helper Function
+# ==============================================================================
+
+def find_file(filename):
+
+    matches = list(DRIVE_ROOT.rglob(filename))
+
+    if len(matches) == 0:
+        return None
+
+    return matches[0]
+
+# ==============================================================================
+# Locate Required Files
+# ==============================================================================
+
+FEATURE_STORE_PATH = find_file("sustainable_feature_store.parquet")
+PREPROCESSOR_PATH = find_file("preprocessor.pkl")
+XGB_MODEL_PATH = find_file("xgboost_energy_model.pkl")
+LGB_MODEL_PATH = find_file("lightgbm_energy_model.pkl")
+
+# ==============================================================================
+# Validate Files
+# ==============================================================================
+
+files = {
+    "Feature Store": FEATURE_STORE_PATH,
+    "Preprocessor": PREPROCESSOR_PATH,
+    "XGBoost Model": XGB_MODEL_PATH,
+    "LightGBM Model": LGB_MODEL_PATH
+}
+
+missing = []
+
+print("-" * 90)
+
+for name, path in files.items():
+
+    if path is None:
+
+        print(f"✗ {name:<20} : NOT FOUND")
+        missing.append(name)
+
+    else:
+
+        print(f"✓ {name:<20} : FOUND")
+        print(f"   {path}")
+
+print("-" * 90)
+
+if len(missing) > 0:
+
+    raise FileNotFoundError(
+        "\nMissing Files:\n" +
+        "\n".join(missing)
+    )
+
+# ==============================================================================
+# Automatically Detect Project Folder
+# ==============================================================================
+
+PROJECT_PATH = FEATURE_STORE_PATH.parents[2]
+
+MODELS_PATH = PROJECT_PATH / "models"
+REPORTS_PATH = PROJECT_PATH / "reports"
+PROCESSED_PATH = PROJECT_PATH / "processed"
+PLOTS_PATH = PROJECT_PATH / "plots"
+
+print("\nProject Directory")
+print(PROJECT_PATH)
+
+# ==============================================================================
+# Load Dataset
+# ==============================================================================
+
+print("\nLoading Sustainable Feature Store...")
+
+df = pd.read_parquet(FEATURE_STORE_PATH)
+
+print("Done.")
+
+# ==============================================================================
+# Load Preprocessor
+# ==============================================================================
+
+print("\nLoading Preprocessor...")
+
+preprocessor = joblib.load(PREPROCESSOR_PATH)
+
+print("Done.")
+
+# ==============================================================================
+# Load XGBoost
+# ==============================================================================
+
+print("\nLoading XGBoost Model...")
+
+xgb_model = joblib.load(XGB_MODEL_PATH)
+
+print("Done.")
+
+# ==============================================================================
+# Load LightGBM
+# ==============================================================================
+
+print("\nLoading LightGBM Model...")
+
+lgb_model = joblib.load(LGB_MODEL_PATH)
+
+print("Done.")
+
+# ==============================================================================
+# Dataset Information
+# ==============================================================================
+
+print("\n" + "=" * 90)
+print("DATASET INFORMATION")
+print("=" * 90)
+
+print(f"Rows              : {len(df):,}")
+print(f"Columns           : {df.shape[1]}")
+
+memory = df.memory_usage(deep=True).sum() / (1024**2)
+
+print(f"Memory Usage      : {memory:.2f} MB")
+
+print(f"Missing Values    : {df.isna().sum().sum():,}")
+
+# ==============================================================================
+# Dataset Preview
+# ==============================================================================
+
+print("\nFirst Five Rows")
+
+display(df.head())
+
+# ==============================================================================
+# Column Summary
+# ==============================================================================
+
+print("\nColumn Names")
+
+for i, col in enumerate(df.columns, start=1):
+
+    print(f"{i:02d}. {col}")
+
+# ==============================================================================
+# Final Summary
+# ==============================================================================
+
+print("\n" + "=" * 90)
+print("PHASE-06 PART-01 COMPLETED")
+print("=" * 90)
+
+print("Successfully Loaded")
+
+print("✓ Sustainable Feature Store")
+print("✓ Preprocessing Pipeline")
+print("✓ XGBoost Model")
+print("✓ LightGBM Model")
+
+print("\nProject Root")
+
+print(PROJECT_PATH)
+
+print("\nModels Folder")
+
+print(MODELS_PATH)
+
+print("\nReports Folder")
+
+print(REPORTS_PATH)
+
+print("\nProcessed Folder")
+
+print(PROCESSED_PATH)
+
+print("\nNext Step")
+
+print("PHASE-06 PART-02")
+print("Generate Predictions & Residual Errors")
+
+print("=" * 90)
+
+# ==============================================================================
+# PHASE-06 : ANOMALY DETECTION ENGINE
+# PART-01 : LOAD FEATURE STORE & TRAINED MODELS (DYNAMIC VERSION)
+# ==============================================================================
+
+print("=" * 90)
+print("PHASE-06 : ANOMALY DETECTION ENGINE")
+print("PART-01 : LOAD FEATURE STORE & TRAINED MODELS")
+print("=" * 90)
+
+import warnings
+warnings.filterwarnings("ignore")
+
+import os
+import joblib
+import pandas as pd
+import numpy as np
+
+from pathlib import Path
+
+# ==============================================================================
+# Mount Google Drive (if required)
+# ==============================================================================
+
+try:
+    from google.colab import drive
+
+    if not os.path.exists("/content/drive/MyDrive"):
+        drive.mount("/content/drive")
+
+except:
+    pass
+
+# ==============================================================================
+# Google Drive Root
+# ==============================================================================
+
+DRIVE_ROOT = Path("/content/drive/MyDrive")
+
+if not DRIVE_ROOT.exists():
+    raise Exception("Google Drive is not mounted.")
+
+print("\nSearching Google Drive for project files...\n")
+
+# ==============================================================================
+# Helper Function
+# ==============================================================================
+
+def find_file(filename):
+
+    matches = list(DRIVE_ROOT.rglob(filename))
+
+    if len(matches) == 0:
+        return None
+
+    return matches[0]
+
+# ==============================================================================
+# Locate Required Files
+# ==============================================================================
+
+FEATURE_STORE_PATH = find_file("sustainable_feature_store.parquet")
+PREPROCESSOR_PATH = find_file("preprocessor.pkl")
+XGB_MODEL_PATH = find_file("xgboost_energy_model.pkl")
+LGB_MODEL_PATH = find_file("lightgbm_energy_model.pkl")
+
+# ==============================================================================
+# Validate Files
+# ==============================================================================
+
+files = {
+    "Feature Store": FEATURE_STORE_PATH,
+    "Preprocessor": PREPROCESSOR_PATH,
+    "XGBoost Model": XGB_MODEL_PATH,
+    "LightGBM Model": LGB_MODEL_PATH
+}
+
+missing = []
+
+print("-" * 90)
+
+for name, path in files.items():
+
+    if path is None:
+
+        print(f"✗ {name:<20} : NOT FOUND")
+        missing.append(name)
+
+    else:
+
+        print(f"✓ {name:<20} : FOUND")
+        print(f"   {path}")
+
+print("-" * 90)
+
+if len(missing) > 0:
+
+    raise FileNotFoundError(
+        "\nMissing Files:\n" +
+        "\n".join(missing)
+    )
+
+# ==============================================================================
+# Automatically Detect Project Folder
+# ==============================================================================
+
+PROJECT_PATH = FEATURE_STORE_PATH.parents[2]
+
+MODELS_PATH = PROJECT_PATH / "models"
+REPORTS_PATH = PROJECT_PATH / "reports"
+PROCESSED_PATH = PROJECT_PATH / "processed"
+PLOTS_PATH = PROJECT_PATH / "plots"
+
+print("\nProject Directory")
+print(PROJECT_PATH)
+
+# ==============================================================================
+# Load Dataset
+# ==============================================================================
+
+print("\nLoading Sustainable Feature Store...")
+
+df = pd.read_parquet(FEATURE_STORE_PATH)
+
+print("Done.")
+
+# ==============================================================================
+# Load Preprocessor
+# ==============================================================================
+
+print("\nLoading Preprocessor...")
+
+preprocessor = joblib.load(PREPROCESSOR_PATH)
+
+print("Done.")
+
+# ==============================================================================
+# Load XGBoost
+# ==============================================================================
+
+print("\nLoading XGBoost Model...")
+
+xgb_model = joblib.load(XGB_MODEL_PATH)
+
+print("Done.")
+
+# ==============================================================================
+# Load LightGBM
+# ==============================================================================
+
+print("\nLoading LightGBM Model...")
+
+lgb_model = joblib.load(LGB_MODEL_PATH)
+
+print("Done.")
+
+# ==============================================================================
+# Dataset Information
+# ==============================================================================
+
+print("\n" + "=" * 90)
+print("DATASET INFORMATION")
+print("=" * 90)
+
+print(f"Rows              : {len(df):,}")
+print(f"Columns           : {df.shape[1]}")
+
+memory = df.memory_usage(deep=True).sum() / (1024**2)
+
+print(f"Memory Usage      : {memory:.2f} MB")
+
+print(f"Missing Values    : {df.isna().sum().sum():,}")
+
+# ==============================================================================
+# Dataset Preview
+# ==============================================================================
+
+print("\nFirst Five Rows")
+
+display(df.head())
+
+# ==============================================================================
+# Column Summary
+# ==============================================================================
+
+print("\nColumn Names")
+
+for i, col in enumerate(df.columns, start=1):
+
+    print(f"{i:02d}. {col}")
+
+# ==============================================================================
+# Final Summary
+# ==============================================================================
+
+print("\n" + "=" * 90)
+print("PHASE-06 PART-01 COMPLETED")
+print("=" * 90)
+
+print("Successfully Loaded")
+
+print("✓ Sustainable Feature Store")
+print("✓ Preprocessing Pipeline")
+print("✓ XGBoost Model")
+print("✓ LightGBM Model")
+
+print("\nProject Root")
+
+print(PROJECT_PATH)
+
+print("\nModels Folder")
+
+print(MODELS_PATH)
+
+print("\nReports Folder")
+
+print(REPORTS_PATH)
+
+print("\nProcessed Folder")
+
+print(PROCESSED_PATH)
+
+print("\nNext Step")
+
+print("PHASE-06 PART-02")
+print("Generate Predictions & Residual Errors")
+
+print("=" * 90)
+
+print("="*80)
+print("FEATURE DTYPE CHECK")
+print("="*80)
+
+feature_columns = list(preprocessor.feature_names_in_)
+
+X = df[feature_columns].copy()
+
+for col in feature_columns:
+    print(f"{col:30} {X[col].dtype}")
+
+print("\nColumns containing 'Unknown':\n")
+
+for col in feature_columns:
+    if X[col].dtype == "object":
+        unknown_count = (X[col] == "Unknown").sum()
+        if unknown_count > 0:
+            print(f"{col}: {unknown_count}")
+
+from pprint import pprint
+
+pprint(preprocessor.transformers_)
+
+# ==============================================================================
+# PHASE-06 : ANOMALY DETECTION ENGINE
+# PART-02 : GENERATE PREDICTIONS & RESIDUAL FEATURES (FINAL FIX)
+# ==============================================================================
+
+print("=" * 90)
+print("PHASE-06 : ANOMALY DETECTION ENGINE")
+print("PART-02 : GENERATE PREDICTIONS & RESIDUAL FEATURES")
+print("=" * 90)
+
+
+import numpy as np
+import pandas as pd
+import os
+
+
+# ==============================================================================
+# Check Required Objects
+# ==============================================================================
+
+required_objects = [
+    "df",
+    "preprocessor",
+    "xgb_model",
+    "PROJECT_PATH"
+]
+
+
+for obj in required_objects:
+
+    if obj not in globals():
+
+        raise Exception(
+            f"{obj} not found. Please run Phase-06 Part-01 first."
+        )
+
+
+# ==============================================================================
+# Target
+# ==============================================================================
+
+TARGET = "electricity"
+
+
+if TARGET not in df.columns:
+
+    raise Exception(
+        "electricity column not found"
+    )
+
+
+# ==============================================================================
+# Get Exact Training Features
+# ==============================================================================
+
+feature_columns = list(
+    preprocessor.feature_names_in_
+)
+
+
+print("\nModel Features:")
+print(len(feature_columns))
+
+
+# ==============================================================================
+# Validate Features
+# ==============================================================================
+
+missing_features = (
+    set(feature_columns)
+    -
+    set(df.columns)
+)
+
+
+if len(missing_features) > 0:
+
+    raise Exception(
+        f"Missing Features:\n{missing_features}"
+    )
+
+
+# ==============================================================================
+# Create ML Input Dataset
+# ==============================================================================
+
+print("\nPreparing Features...")
+
+
+X = df[feature_columns].copy()
+
+
+y = df[TARGET].copy()
+
+
+
+print("Feature Shape:")
+print(X.shape)
+
+
+
+# ==============================================================================
+# FIX: Convert Object Numeric Columns
+# ==============================================================================
+
+
+print("\nFixing Numeric Columns...")
+
+
+numeric_string_columns = [
+
+    "eui",
+    "site_eui",
+    "source_eui",
+    "energystarscore"
+
+]
+
+
+for col in numeric_string_columns:
+
+
+    if col in X.columns:
+
+
+        X[col] = (
+
+            X[col]
+
+            .replace(
+                [
+                    "Unknown",
+                    "",
+                    "NA",
+                    "None"
+                ],
+                np.nan
+            )
+
+        )
+
+
+        X[col] = pd.to_numeric(
+
+            X[col],
+
+            errors="coerce"
+
+        )
+
+
+print("Numeric columns fixed.")
+
+
+
+# ==============================================================================
+# Check Data Types
+# ==============================================================================
+
+print("\nFinal Feature Types Check")
+
+print(
+    X[numeric_string_columns]
+    .dtypes
+)
+
+
+
+# ==============================================================================
+# Apply Preprocessor
+# ==============================================================================
+
+
+print("\nApplying Preprocessor...")
+
+
+X_processed = preprocessor.transform(X)
+
+
+print("Transformation Completed")
+
+print(
+    "Processed Shape:",
+    X_processed.shape
+)
+
+
+
+# ==============================================================================
+# Generate Predictions
+# ==============================================================================
+
+
+print("\nGenerating XGBoost Predictions...")
+
+
+predictions = xgb_model.predict(
+    X_processed
+)
+
+
+print("Prediction Completed")
+
+
+
+# ==============================================================================
+# Create Result Dataset
+# ==============================================================================
+
+
+df_predictions = df.copy()
+
+
+df_predictions["prediction"] = predictions
+
+
+df_predictions["residual"] = (
+
+    df_predictions[TARGET]
+
+    -
+
+    df_predictions["prediction"]
+
+)
+
+
+
+df_predictions["absolute_error"] = (
+
+    df_predictions["residual"]
+
+    .abs()
+
+)
+
+
+
+df_predictions["percentage_error"] = (
+
+    df_predictions["absolute_error"]
+
+    /
+
+    (
+        df_predictions[TARGET].abs()
+        +
+        1e-6
+    )
+
+) * 100
+
+
+
+# ==============================================================================
+# Evaluation Summary
+# ==============================================================================
+
+
+print("\nPrediction Statistics")
+print("-"*60)
+
+
+print(
+    "Mean Actual:",
+    df_predictions[TARGET].mean()
+)
+
+
+print(
+    "Mean Prediction:",
+    df_predictions["prediction"].mean()
+)
+
+
+print(
+    "Mean Residual:",
+    df_predictions["residual"].mean()
+)
+
+
+print(
+    "Mean Absolute Error:",
+    df_predictions["absolute_error"].mean()
+)
+
+
+print(
+    "Maximum Error:",
+    df_predictions["absolute_error"].max()
+)
+
+
+
+# ==============================================================================
+# Preview
+# ==============================================================================
+
+
+print("\nPrediction Preview")
+
+
+display(
+
+    df_predictions[
+
+        [
+            "electricity",
+            "prediction",
+            "residual",
+            "absolute_error",
+            "percentage_error"
+        ]
+
+    ].head()
+
+)
+
+
+
+# ==============================================================================
+# Save Output
+# ==============================================================================
+
+
+output_path = os.path.join(
+
+    PROJECT_PATH,
+
+    "processed",
+
+    "prediction_results.parquet"
+
+)
+
+
+os.makedirs(
+
+    os.path.dirname(output_path),
+
+    exist_ok=True
+
+)
+
+
+
+df_predictions.to_parquet(
+
+    output_path,
+
+    index=False
+
+)
+
+
+
+print("\nSaved Successfully")
+
+print(output_path)
+
+
+
+# ==============================================================================
+# Complete
+# ==============================================================================
+
+
+print("\n" + "="*90)
+
+print("PHASE-06 PART-02 COMPLETED")
+
+print("="*90)
+
+
+print("""
+Created:
+
+✓ prediction
+✓ residual
+✓ absolute_error
+✓ percentage_error
+
+Saved:
+
+processed/prediction_results.parquet
+
+
+Next:
+
+PHASE-06 PART-03
+Residual Analysis & Statistical Anomaly Detection
+""")
+
+print("="*90)
+
+# ==============================================================================
+# PHASE-06 : ANOMALY DETECTION ENGINE
+# PART-03 : RESIDUAL ANALYSIS & STATISTICAL ANOMALY DETECTION
+# ==============================================================================
+
+print("=" * 90)
+print("PHASE-06 : ANOMALY DETECTION ENGINE")
+print("PART-03 : RESIDUAL ANALYSIS & STATISTICAL ANOMALY DETECTION")
+print("=" * 90)
+
+
+import os
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+
+# ==============================================================================
+# Verify Dataset
+# ==============================================================================
+
+if "df_predictions" not in globals():
+
+    prediction_path = os.path.join(
+        PROJECT_PATH,
+        "processed",
+        "prediction_results.parquet"
+    )
+
+    df_predictions = pd.read_parquet(
+        prediction_path
+    )
+
+
+print("\nDataset Loaded")
+
+print(
+    df_predictions.shape
+)
+
+
+
+# ==============================================================================
+# Residual Statistics
+# ==============================================================================
+
+
+print("\nResidual Statistics")
+print("-"*60)
+
+
+residual_mean = df_predictions["residual"].mean()
+
+residual_std = df_predictions["residual"].std()
+
+
+print(
+    f"Residual Mean : {residual_mean:.4f}"
+)
+
+
+print(
+    f"Residual Std  : {residual_std:.4f}"
+)
+
+
+
+print(
+    f"Minimum Residual : {df_predictions['residual'].min():.4f}"
+)
+
+
+print(
+    f"Maximum Residual : {df_predictions['residual'].max():.4f}"
+)
+
+
+
+# ==============================================================================
+# Residual Z-score
+# ==============================================================================
+
+
+print("\nCalculating Residual Z-score...")
+
+
+df_predictions["residual_zscore"] = (
+
+    (
+        df_predictions["residual"]
+        -
+        residual_mean
+    )
+
+    /
+
+    residual_std
+
+)
+
+
+
+print("Completed")
+
+
+
+# ==============================================================================
+# Statistical Thresholds
+# ==============================================================================
+
+
+print("\nCreating Statistical Anomaly Labels")
+
+
+def anomaly_label(z):
+
+    z = abs(z)
+
+    if z < 2:
+
+        return "Normal"
+
+    elif z < 3:
+
+        return "Moderate"
+
+    elif z < 4:
+
+        return "High"
+
+    else:
+
+        return "Critical"
+
+
+
+df_predictions["statistical_anomaly_level"] = (
+
+    df_predictions["residual_zscore"]
+
+    .apply(anomaly_label)
+
+)
+
+
+
+# ==============================================================================
+# Binary Anomaly Flag
+# ==============================================================================
+
+
+df_predictions["is_statistical_anomaly"] = (
+
+    df_predictions["residual_zscore"]
+    .abs()
+    >= 3
+
+).astype(int)
+
+
+
+# ==============================================================================
+# Anomaly Distribution
+# ==============================================================================
+
+
+print("\nAnomaly Distribution")
+print("-"*60)
+
+
+print(
+
+    df_predictions[
+        "statistical_anomaly_level"
+    ]
+    .value_counts()
+
+)
+
+
+
+# ==============================================================================
+# Visualization 1
+# Residual Distribution
+# ==============================================================================
+
+
+plt.figure(figsize=(12,5))
+
+
+sns.histplot(
+
+    df_predictions["residual"],
+
+    bins=200,
+
+    kde=True
+
+)
+
+
+plt.axvline(
+    0,
+    color="red",
+    linestyle="--"
+)
+
+
+plt.title(
+    "Electricity Prediction Residual Distribution"
+)
+
+
+plt.xlabel(
+    "Residual Error"
+)
+
+
+plt.ylabel(
+    "Frequency"
+)
+
+
+plt.show()
+
+
+
+# ==============================================================================
+# Visualization 2
+# Z-score Distribution
+# ==============================================================================
+
+
+plt.figure(figsize=(12,5))
+
+
+sns.histplot(
+
+    df_predictions["residual_zscore"],
+
+    bins=200
+
+)
+
+
+plt.axvline(
+    3,
+    color="red",
+    linestyle="--",
+    label="Upper Threshold"
+)
+
+
+plt.axvline(
+    -3,
+    color="red",
+    linestyle="--"
+)
+
+
+plt.title(
+    "Residual Z-score Distribution"
+)
+
+
+plt.legend()
+
+plt.show()
+
+
+
+# ==============================================================================
+# Top Extreme Anomalies
+# ==============================================================================
+
+
+print("\nTop 20 Extreme Energy Deviations")
+
+
+display(
+
+    df_predictions.sort_values(
+
+        "absolute_error",
+
+        ascending=False
+
+    )
+
+    [
+
+        [
+            "date",
+            "building_id",
+            "electricity",
+            "prediction",
+            "residual",
+            "absolute_error",
+            "residual_zscore",
+            "statistical_anomaly_level"
+
+        ]
+
+    ]
+
+    .head(20)
+
+)
+
+
+
+# ==============================================================================
+# Save Output
+# ==============================================================================
+
+
+output_path = os.path.join(
+
+    PROJECT_PATH,
+
+    "processed",
+
+    "residual_anomaly_results.parquet"
+
+)
+
+
+df_predictions.to_parquet(
+
+    output_path,
+
+    index=False
+
+)
+
+
+
+print("\nSaved:")
+print(output_path)
+
+
+
+# ==============================================================================
+# Complete
+# ==============================================================================
+
+
+print("\n" + "="*90)
+
+print("PHASE-06 PART-03 COMPLETED")
+
+print("="*90)
+
+
+print("""
+Created:
+
+✓ residual_zscore
+✓ statistical_anomaly_level
+✓ is_statistical_anomaly
+
+
+Saved:
+
+processed/residual_anomaly_results.parquet
+
+
+Next:
+
+PHASE-06 PART-04
+Isolation Forest Anomaly Detection
+""")
+
+print("="*90)
+
+# ==============================================================================
+# PHASE-06 : ANOMALY DETECTION ENGINE
+# PART-04 : ISOLATION FOREST DETECTION (FIXED)
+# ==============================================================================
+
+print("=" * 90)
+print("PHASE-06 : ANOMALY DETECTION ENGINE")
+print("PART-04 : ISOLATION FOREST DETECTION")
+print("=" * 90)
+
+
+import os
+import joblib
+import numpy as np
+import pandas as pd
+
+from sklearn.ensemble import IsolationForest
+
+
+
+# ==============================================================================
+# Load Previous Results
+# ==============================================================================
+
+if "df_predictions" not in globals():
+
+    prediction_path = os.path.join(
+        PROJECT_PATH,
+        "processed",
+        "residual_anomaly_results.parquet"
+    )
+
+    df_predictions = pd.read_parquet(
+        prediction_path
+    )
+
+
+print("\nDataset Loaded")
+
+print(df_predictions.shape)
+
+
+
+# ==============================================================================
+# Select Features
+# ==============================================================================
+
+
+anomaly_features = [
+
+    "electricity",
+    "prediction",
+    "residual",
+    "absolute_error",
+
+    "lag_1",
+    "lag_7",
+
+    "rolling_7",
+    "rolling_30",
+
+    "airTemperature",
+    "dewTemperature",
+    "windSpeed",
+
+    "temperature_diff",
+
+    "heating_degree_days",
+    "cooling_degree_days",
+
+    "eui",
+    "site_eui",
+    "source_eui",
+    "energystarscore"
+
+]
+
+
+available_features = [
+
+    col for col in anomaly_features
+
+    if col in df_predictions.columns
+
+]
+
+
+X_anomaly = df_predictions[
+    available_features
+].copy()
+
+
+
+print("\nFeatures Used")
+
+print(available_features)
+
+
+print(
+    "\nInitial Shape:",
+    X_anomaly.shape
+)
+
+
+
+# ==============================================================================
+# Convert Numeric Columns Properly
+# ==============================================================================
+
+
+print("\nConverting Features To Numeric...")
+
+
+for col in X_anomaly.columns:
+
+    X_anomaly[col] = (
+
+        X_anomaly[col]
+
+        .replace(
+            [
+                "Unknown",
+                "",
+                "NA",
+                "None"
+            ],
+            np.nan
+        )
+
+    )
+
+
+    X_anomaly[col] = pd.to_numeric(
+
+        X_anomaly[col],
+
+        errors="coerce"
+
+    )
+
+
+
+print("Conversion Completed")
+
+
+
+# ==============================================================================
+# Check Remaining Non Numeric Columns
+# ==============================================================================
+
+
+print("\nData Types")
+
+
+print(
+    X_anomaly.dtypes
+)
+
+
+
+# ==============================================================================
+# Missing Value Handling
+# ==============================================================================
+
+
+print("\nHandling Missing Values...")
+
+
+missing_before = (
+
+    X_anomaly.isna()
+    .sum()
+    .sum()
+
+)
+
+
+print(
+    "Missing Values Before:",
+    missing_before
+)
+
+
+
+X_anomaly = X_anomaly.fillna(
+
+    X_anomaly.median()
+
+)
+
+
+
+missing_after = (
+
+    X_anomaly.isna()
+    .sum()
+    .sum()
+
+)
+
+
+print(
+    "Missing Values After:",
+    missing_after
+)
+
+
+
+# ==============================================================================
+# Isolation Forest
+# ==============================================================================
+
+
+print("\nTraining Isolation Forest...")
+
+
+iso_model = IsolationForest(
+
+    n_estimators=200,
+
+    contamination=0.02,
+
+    random_state=42,
+
+    n_jobs=-1
+
+)
+
+
+iso_model.fit(
+
+    X_anomaly
+
+)
+
+
+
+print("Training Completed")
+
+
+
+# ==============================================================================
+# Generate Scores
+# ==============================================================================
+
+
+print("\nGenerating Anomaly Scores...")
+
+
+df_predictions["isolation_score"] = (
+
+    iso_model.decision_function(
+        X_anomaly
+    )
+
+)
+
+
+
+df_predictions["isolation_prediction"] = (
+
+    iso_model.predict(
+        X_anomaly
+    )
+
+)
+
+
+
+df_predictions["isolation_anomaly"] = (
+
+    df_predictions["isolation_prediction"]
+
+    .map(
+        {
+            1:0,
+            -1:1
+        }
+    )
+
+)
+
+
+
+# ==============================================================================
+# Results
+# ==============================================================================
+
+
+print("\nIsolation Forest Distribution")
+
+print(
+
+    df_predictions[
+        "isolation_anomaly"
+    ]
+    .value_counts()
+
+)
+
+
+
+# ==============================================================================
+# Save Model
+# ==============================================================================
+
+
+model_path = os.path.join(
+
+    PROJECT_PATH,
+
+    "models",
+
+    "isolation_forest.pkl"
+
+)
+
+
+
+joblib.dump(
+
+    iso_model,
+
+    model_path
+
+)
+
+
+
+print("\nModel Saved")
+
+print(model_path)
+
+
+
+# ==============================================================================
+# Save Dataset
+# ==============================================================================
+
+
+output_path = os.path.join(
+
+    PROJECT_PATH,
+
+    "processed",
+
+    "isolation_forest_results.parquet"
+
+)
+
+
+
+df_predictions.to_parquet(
+
+    output_path,
+
+    index=False
+
+)
+
+
+
+print("\nDataset Saved")
+
+print(output_path)
+
+
+
+print("\n" + "="*90)
+
+print("PHASE-06 PART-04 COMPLETED")
+
+print("="*90)
+
+
+print("""
+Created:
+
+✓ isolation_score
+✓ isolation_prediction
+✓ isolation_anomaly
+
+
+Saved:
+
+models/isolation_forest.pkl
+
+processed/isolation_forest_results.parquet
+
+
+Next:
+
+PHASE-06 PART-05
+Local Outlier Factor Detection
+""")
+
+print("="*90)
+
+# ==============================================================================
+# PHASE-06 : ANOMALY DETECTION ENGINE
+# PART-05 : LOCAL OUTLIER FACTOR (LOF) DETECTION
+# ==============================================================================
+
+print("=" * 90)
+print("PHASE-06 : ANOMALY DETECTION ENGINE")
+print("PART-05 : LOCAL OUTLIER FACTOR DETECTION")
+print("=" * 90)
+
+
+import os
+import joblib
+import numpy as np
+import pandas as pd
+
+from sklearn.neighbors import LocalOutlierFactor
+from sklearn.preprocessing import StandardScaler
+
+
+
+# ==============================================================================
+# Load Isolation Forest Results
+# ==============================================================================
+
+
+if "df_predictions" not in globals():
+
+    path = os.path.join(
+
+        PROJECT_PATH,
+
+        "processed",
+
+        "isolation_forest_results.parquet"
+
+    )
+
+
+    df_predictions = pd.read_parquet(path)
+
+
+
+print("\nDataset Loaded")
+
+print(df_predictions.shape)
+
+
+
+# ==============================================================================
+# LOF Feature Selection
+# ==============================================================================
+
+
+lof_features = [
+
+    "electricity",
+
+    "prediction",
+
+    "residual",
+
+    "absolute_error",
+
+    "lag_1",
+
+    "lag_7",
+
+    "rolling_7",
+
+    "rolling_30",
+
+    "airTemperature",
+
+    "dewTemperature",
+
+    "windSpeed",
+
+    "temperature_diff",
+
+    "heating_degree_days",
+
+    "cooling_degree_days"
+
+]
+
+
+
+available_features = [
+
+    col for col in lof_features
+
+    if col in df_predictions.columns
+
+]
+
+
+
+X_lof = df_predictions[
+
+    available_features
+
+].copy()
+
+
+
+print("\nLOF Features")
+
+print(available_features)
+
+
+print(
+
+    "Feature Shape:",
+
+    X_lof.shape
+
+)
+
+
+
+# ==============================================================================
+# Convert Numeric
+# ==============================================================================
+
+
+print("\nCleaning Data...")
+
+
+for col in X_lof.columns:
+
+
+    X_lof[col] = (
+
+        X_lof[col]
+
+        .replace(
+
+            [
+                "Unknown",
+                "",
+                "NA",
+                "None"
+            ],
+
+            np.nan
+
+        )
+
+    )
+
+
+    X_lof[col] = pd.to_numeric(
+
+        X_lof[col],
+
+        errors="coerce"
+
+    )
+
+
+
+X_lof = X_lof.fillna(
+
+    X_lof.median()
+
+)
+
+
+
+print("Cleaning Completed")
+
+
+
+# ==============================================================================
+# Scaling
+# ==============================================================================
+
+
+print("\nScaling Features...")
+
+
+scaler = StandardScaler()
+
+
+X_scaled = scaler.fit_transform(
+
+    X_lof
+
+)
+
+
+print("Scaling Completed")
+
+
+
+# ==============================================================================
+# Sampling For LOF
+# ==============================================================================
+
+
+sample_size = 100000
+
+
+print("\nSampling Data For LOF")
+
+
+
+if len(X_scaled) > sample_size:
+
+
+    sample_indices = np.random.RandomState(42).choice(
+
+        len(X_scaled),
+
+        sample_size,
+
+        replace=False
+
+    )
+
+
+    X_sample = X_scaled[
+
+        sample_indices
+
+    ]
+
+
+else:
+
+
+    sample_indices = np.arange(
+
+        len(X_scaled)
+
+    )
+
+
+    X_sample = X_scaled
+
+
+
+print(
+
+    "LOF Training Samples:",
+
+    X_sample.shape
+
+)
+
+
+
+# ==============================================================================
+# Train LOF
+# ==============================================================================
+
+
+print("\nTraining Local Outlier Factor...")
+
+
+lof_model = LocalOutlierFactor(
+
+    n_neighbors=50,
+
+    contamination=0.02,
+
+    novelty=False,
+
+    n_jobs=-1
+
+)
+
+
+
+lof_predictions = lof_model.fit_predict(
+
+    X_sample
+
+)
+
+
+
+lof_scores = lof_model.negative_outlier_factor_
+
+
+
+print("LOF Training Completed")
+
+
+
+# ==============================================================================
+# Create Full Dataset Labels
+# ==============================================================================
+
+
+print("\nCreating LOF Results...")
+
+
+df_predictions["lof_anomaly"] = 0
+
+
+df_predictions["lof_score"] = 0.0
+
+
+
+df_predictions.loc[
+
+    sample_indices,
+
+    "lof_anomaly"
+
+] = (
+
+    lof_predictions == -1
+
+).astype(int)
+
+
+
+df_predictions.loc[
+
+    sample_indices,
+
+    "lof_score"
+
+] = lof_scores
+
+
+
+# ==============================================================================
+# Summary
+# ==============================================================================
+
+
+print("\nLOF Distribution")
+
+print(
+
+    df_predictions[
+
+        "lof_anomaly"
+
+    ]
+
+    .value_counts()
+
+)
+
+
+
+# ==============================================================================
+# Save Model Objects
+# ==============================================================================
+
+
+model_path = os.path.join(
+
+    PROJECT_PATH,
+
+    "models",
+
+    "lof_scaler.pkl"
+
+)
+
+
+
+joblib.dump(
+
+    scaler,
+
+    model_path
+
+)
+
+
+
+print("\nScaler Saved")
+
+print(model_path)
+
+
+
+# ==============================================================================
+# Save Results
+# ==============================================================================
+
+
+output_path = os.path.join(
+
+    PROJECT_PATH,
+
+    "processed",
+
+    "lof_results.parquet"
+
+)
+
+
+
+df_predictions.to_parquet(
+
+    output_path,
+
+    index=False
+
+)
+
+
+
+print("\nResults Saved")
+
+print(output_path)
+
+
+
+print("\n" + "="*90)
+
+print("PHASE-06 PART-05 COMPLETED")
+
+print("="*90)
+
+
+print("""
+Created:
+
+✓ lof_score
+✓ lof_anomaly
+
+
+Saved:
+
+processed/lof_results.parquet
+
+
+Next:
+
+PHASE-06 PART-06
+Combined Energy Risk Score
+""")
+
+print("="*90)
+
+# ==============================================================================
+# PHASE-06 : ANOMALY DETECTION ENGINE
+# PART-05 : LOCAL OUTLIER FACTOR (LOF) DETECTION
+# ==============================================================================
+
+print("=" * 90)
+print("PHASE-06 : ANOMALY DETECTION ENGINE")
+print("PART-05 : LOCAL OUTLIER FACTOR DETECTION")
+print("=" * 90)
+
+
+import os
+import joblib
+import numpy as np
+import pandas as pd
+
+from sklearn.neighbors import LocalOutlierFactor
+from sklearn.preprocessing import StandardScaler
+
+
+
+# ==============================================================================
+# Load Isolation Forest Results
+# ==============================================================================
+
+
+if "df_predictions" not in globals():
+
+    path = os.path.join(
+
+        PROJECT_PATH,
+
+        "processed",
+
+        "isolation_forest_results.parquet"
+
+    )
+
+
+    df_predictions = pd.read_parquet(path)
+
+
+
+print("\nDataset Loaded")
+
+print(df_predictions.shape)
+
+
+
+# ==============================================================================
+# LOF Feature Selection
+# ==============================================================================
+
+
+lof_features = [
+
+    "electricity",
+
+    "prediction",
+
+    "residual",
+
+    "absolute_error",
+
+    "lag_1",
+
+    "lag_7",
+
+    "rolling_7",
+
+    "rolling_30",
+
+    "airTemperature",
+
+    "dewTemperature",
+
+    "windSpeed",
+
+    "temperature_diff",
+
+    "heating_degree_days",
+
+    "cooling_degree_days"
+
+]
+
+
+
+available_features = [
+
+    col for col in lof_features
+
+    if col in df_predictions.columns
+
+]
+
+
+
+X_lof = df_predictions[
+
+    available_features
+
+].copy()
+
+
+
+print("\nLOF Features")
+
+print(available_features)
+
+
+print(
+
+    "Feature Shape:",
+
+    X_lof.shape
+
+)
+
+
+
+# ==============================================================================
+# Convert Numeric
+# ==============================================================================
+
+
+print("\nCleaning Data...")
+
+
+for col in X_lof.columns:
+
+
+    X_lof[col] = (
+
+        X_lof[col]
+
+        .replace(
+
+            [
+                "Unknown",
+                "",
+                "NA",
+                "None"
+            ],
+
+            np.nan
+
+        )
+
+    )
+
+
+    X_lof[col] = pd.to_numeric(
+
+        X_lof[col],
+
+        errors="coerce"
+
+    )
+
+
+
+X_lof = X_lof.fillna(
+
+    X_lof.median()
+
+)
+
+
+
+print("Cleaning Completed")
+
+
+
+# ==============================================================================
+# Scaling
+# ==============================================================================
+
+
+print("\nScaling Features...")
+
+
+scaler = StandardScaler()
+
+
+X_scaled = scaler.fit_transform(
+
+    X_lof
+
+)
+
+
+print("Scaling Completed")
+
+
+
+# ==============================================================================
+# Sampling For LOF
+# ==============================================================================
+
+
+sample_size = 100000
+
+
+print("\nSampling Data For LOF")
+
+
+
+if len(X_scaled) > sample_size:
+
+
+    sample_indices = np.random.RandomState(42).choice(
+
+        len(X_scaled),
+
+        sample_size,
+
+        replace=False
+
+    )
+
+
+    X_sample = X_scaled[
+
+        sample_indices
+
+    ]
+
+
+else:
+
+
+    sample_indices = np.arange(
+
+        len(X_scaled)
+
+    )
+
+
+    X_sample = X_scaled
+
+
+
+print(
+
+    "LOF Training Samples:",
+
+    X_sample.shape
+
+)
+
+
+
+# ==============================================================================
+# Train LOF
+# ==============================================================================
+
+
+print("\nTraining Local Outlier Factor...")
+
+
+lof_model = LocalOutlierFactor(
+
+    n_neighbors=50,
+
+    contamination=0.02,
+
+    novelty=False,
+
+    n_jobs=-1
+
+)
+
+
+
+lof_predictions = lof_model.fit_predict(
+
+    X_sample
+
+)
+
+
+
+lof_scores = lof_model.negative_outlier_factor_
+
+
+
+print("LOF Training Completed")
+
+
+
+# ==============================================================================
+# Create Full Dataset Labels
+# ==============================================================================
+
+
+print("\nCreating LOF Results...")
+
+
+df_predictions["lof_anomaly"] = 0
+
+
+df_predictions["lof_score"] = 0.0
+
+
+
+df_predictions.loc[
+
+    sample_indices,
+
+    "lof_anomaly"
+
+] = (
+
+    lof_predictions == -1
+
+).astype(int)
+
+
+
+df_predictions.loc[
+
+    sample_indices,
+
+    "lof_score"
+
+] = lof_scores
+
+
+
+# ==============================================================================
+# Summary
+# ==============================================================================
+
+
+print("\nLOF Distribution")
+
+print(
+
+    df_predictions[
+
+        "lof_anomaly"
+
+    ]
+
+    .value_counts()
+
+)
+
+
+
+# ==============================================================================
+# Save Model Objects
+# ==============================================================================
+
+
+model_path = os.path.join(
+
+    PROJECT_PATH,
+
+    "models",
+
+    "lof_scaler.pkl"
+
+)
+
+
+
+joblib.dump(
+
+    scaler,
+
+    model_path
+
+)
+
+
+
+print("\nScaler Saved")
+
+print(model_path)
+
+
+
+# ==============================================================================
+# Save Results
+# ==============================================================================
+
+
+output_path = os.path.join(
+
+    PROJECT_PATH,
+
+    "processed",
+
+    "lof_results.parquet"
+
+)
+
+
+
+df_predictions.to_parquet(
+
+    output_path,
+
+    index=False
+
+)
+
+
+
+print("\nResults Saved")
+
+print(output_path)
+
+
+
+print("\n" + "="*90)
+
+print("PHASE-06 PART-05 COMPLETED")
+
+print("="*90)
+
+
+print("""
+Created:
+
+✓ lof_score
+✓ lof_anomaly
+
+
+Saved:
+
+processed/lof_results.parquet
+
+
+Next:
+
+PHASE-06 PART-06
+Combined Energy Risk Score
+""")
+
+print("="*90)
+
+# ==============================================================================
+# PHASE-06 : ANOMALY DETECTION ENGINE
+# PART-06 : COMBINED ENERGY RISK SCORE ENGINE
+# ==============================================================================
+
+
+print("=" * 90)
+print("PHASE-06 : ANOMALY DETECTION ENGINE")
+print("PART-06 : COMBINED ENERGY RISK SCORE")
+print("=" * 90)
+
+
+
+import os
+import numpy as np
+import pandas as pd
+
+
+
+# ==============================================================================
+# Load LOF Results
+# ==============================================================================
+
+
+if "df_predictions" not in globals():
+
+
+    path = os.path.join(
+
+        PROJECT_PATH,
+
+        "processed",
+
+        "lof_results.parquet"
+
+    )
+
+
+    df_predictions = pd.read_parquet(path)
+
+
+
+print("\nDataset Loaded")
+
+print(df_predictions.shape)
+
+
+
+# ==============================================================================
+# Normalize Error Score
+# ==============================================================================
+
+
+print("\nCreating Risk Components...")
+
+
+# Residual Error Component
+
+error_score = (
+
+    df_predictions["absolute_error"]
+
+    /
+
+    df_predictions["absolute_error"].quantile(0.99)
+
+) * 100
+
+
+
+error_score = error_score.clip(
+
+    0,
+
+    100
+
+)
+
+
+
+df_predictions["error_risk_score"] = error_score
+
+
+
+# ==============================================================================
+# Statistical Risk
+# ==============================================================================
+
+
+df_predictions["statistical_risk_score"] = (
+
+    df_predictions["residual_zscore"]
+
+    .abs()
+
+    /
+
+    5
+
+) * 100
+
+
+
+df_predictions["statistical_risk_score"] = (
+
+    df_predictions["statistical_risk_score"]
+
+    .clip(0,100)
+
+)
+
+
+
+# ==============================================================================
+# Isolation Forest Risk
+# ==============================================================================
+
+
+df_predictions["isolation_risk_score"] = (
+
+    df_predictions["isolation_anomaly"]
+
+    *100
+
+)
+
+
+
+# ==============================================================================
+# LOF Risk
+# ==============================================================================
+
+
+df_predictions["lof_risk_score"] = (
+
+    df_predictions["lof_anomaly"]
+
+    *100
+
+)
+
+
+
+# ==============================================================================
+# Combined Risk Score
+# ==============================================================================
+
+
+print("\nCalculating Final Energy Risk Score...")
+
+
+df_predictions["energy_risk_score"] = (
+
+      df_predictions["error_risk_score"] * 0.40
+
+    + df_predictions["statistical_risk_score"] * 0.25
+
+    + df_predictions["isolation_risk_score"] * 0.20
+
+    + df_predictions["lof_risk_score"] * 0.15
+
+)
+
+
+
+df_predictions["energy_risk_score"] = (
+
+    df_predictions["energy_risk_score"]
+
+    .clip(0,100)
+
+)
+
+
+
+# ==============================================================================
+# Risk Category
+# ==============================================================================
+
+
+def risk_category(score):
+
+    if score < 20:
+
+        return "Low Risk"
+
+    elif score < 50:
+
+        return "Medium Risk"
+
+    elif score < 75:
+
+        return "High Risk"
+
+    else:
+
+        return "Critical Risk"
+
+
+
+df_predictions["energy_risk_category"] = (
+
+    df_predictions["energy_risk_score"]
+
+    .apply(risk_category)
+
+)
+
+
+
+# ==============================================================================
+# Summary
+# ==============================================================================
+
+
+print("\nRisk Distribution")
+
+print("-"*60)
+
+
+print(
+
+    df_predictions["energy_risk_category"]
+
+    .value_counts()
+
+)
+
+
+
+print("\nAverage Risk Score:")
+
+print(
+
+    df_predictions["energy_risk_score"]
+
+    .mean()
+
+)
+
+
+
+# ==============================================================================
+# Building Level Risk Ranking
+# ==============================================================================
+
+
+print("\nGenerating Building Risk Ranking...")
+
+
+building_risk = (
+
+    df_predictions
+
+    .groupby("building_id")
+
+    .agg(
+
+        average_energy_risk=(
+
+            "energy_risk_score",
+
+            "mean"
+
+        ),
+
+        maximum_energy_risk=(
+
+            "energy_risk_score",
+
+            "max"
+
+        ),
+
+        anomaly_count=(
+
+            "isolation_anomaly",
+
+            "sum"
+
+        ),
+
+        total_records=(
+
+            "energy_risk_score",
+
+            "count"
+
+        )
+
+    )
+
+    .reset_index()
+
+)
+
+
+
+building_risk["risk_rank"] = (
+
+    building_risk[
+
+        "average_energy_risk"
+
+    ]
+
+    .rank(
+
+        ascending=False
+
+    )
+
+)
+
+
+
+building_risk = building_risk.sort_values(
+
+    "average_energy_risk",
+
+    ascending=False
+
+)
+
+
+
+display(
+
+    building_risk.head(20)
+
+)
+
+
+
+# ==============================================================================
+# Save Final Outputs
+# ==============================================================================
+
+
+risk_output = os.path.join(
+
+    PROJECT_PATH,
+
+    "processed",
+
+    "energy_risk_results.parquet"
+
+)
+
+
+
+building_output = os.path.join(
+
+    PROJECT_PATH,
+
+    "reports",
+
+    "building_risk_ranking.csv"
+
+)
+
+
+
+df_predictions.to_parquet(
+
+    risk_output,
+
+    index=False
+
+)
+
+
+
+building_risk.to_csv(
+
+    building_output,
+
+    index=False
+
+)
+
+
+
+print("\nSaved:")
+
+print(risk_output)
+
+print(building_output)
+
+
+
+print("\n" + "="*90)
+
+print("PHASE-06 PART-06 COMPLETED")
+
+print("="*90)
+
+
+print("""
+FINAL ANOMALY ENGINE CREATED
+
+Generated:
+
+✓ Energy Risk Score
+✓ Risk Category
+✓ Building Risk Ranking
+✓ Anomaly Intelligence Dataset
+
+
+Files:
+
+processed/
+    energy_risk_results.parquet
+
+
+reports/
+    building_risk_ranking.csv
+
+
+PHASE-06 COMPLETE
+
+
+Next Phase:
+
+PHASE-07
+Time-Series Forecasting Engine
+""")
+
+print("="*90)
+
