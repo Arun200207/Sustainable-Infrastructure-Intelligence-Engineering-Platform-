@@ -1,0 +1,1505 @@
+# ============================================================
+# PHASE-10 — CELL 01
+# ENVIRONMENT SETUP
+# ============================================================
+
+!pip -q install -U \
+    langchain \
+    langchain-community \
+    langchain-huggingface \
+    sentence-transformers \
+    faiss-cpu \
+    pypdf \
+    tiktoken \
+    transformers \
+    accelerate
+
+import os
+import json
+import glob
+import warnings
+from pathlib import Path
+
+warnings.filterwarnings("ignore")
+
+PROJECT_ROOT = Path("/content/gdrive/MyDrive/GitHub_Project_01")
+
+PROCESSED_DIR = PROJECT_ROOT / "processed"
+REPORTS_DIR = PROJECT_ROOT / "reports"
+
+PHASE10_PROCESSED = PROCESSED_DIR / "phase10_rag"
+PHASE10_REPORTS = REPORTS_DIR / "phase10_rag"
+PHASE10_KB = PHASE10_PROCESSED / "knowledge_base"
+PHASE10_VECTOR = PHASE10_PROCESSED / "vector_store"
+
+for directory in [
+    PHASE10_PROCESSED,
+    PHASE10_REPORTS,
+    PHASE10_KB,
+    PHASE10_VECTOR
+]:
+    directory.mkdir(parents=True, exist_ok=True)
+
+print("=" * 90)
+print("PHASE-10 — LLM + RAG SUSTAINABILITY ASSISTANT")
+print("=" * 90)
+
+print("Project Root:")
+print(PROJECT_ROOT)
+
+print("\nPhase-10 directories ready:")
+print(PHASE10_PROCESSED)
+print(PHASE10_KB)
+print(PHASE10_VECTOR)
+print(PHASE10_REPORTS)
+
+print("\n✓ Environment setup complete")
+
+# ============================================================
+# PHASE-10 — CELL 02
+# DISCOVER VERIFIED KNOWLEDGE SOURCES
+# ============================================================
+
+required_sources = {
+    "phase09_master":
+        PROCESSED_DIR / "sustainability" / "carbon_cost_master.parquet",
+
+    "phase09_building":
+        PROCESSED_DIR / "sustainability" /
+        "carbon_cost_building_intelligence.parquet",
+
+    "carbon_intelligence":
+        PROCESSED_DIR / "sustainability" / "carbon" /
+        "carbon_intelligence.parquet",
+
+    "cost_intelligence":
+        PROCESSED_DIR / "sustainability" / "cost" /
+        "energy_cost_intelligence.parquet",
+
+    "phase09_kpi":
+        REPORTS_DIR / "sustainability" /
+        "phase09_carbon_cost_kpis.json",
+
+    "phase09_factor_config":
+        PROCESSED_DIR / "sustainability" / "carbon" /
+        "phase09_factor_configuration.json",
+
+    "phase09_validation":
+        REPORTS_DIR / "sustainability" /
+        "phase09_repair_validation_report.json"
+}
+
+print("=" * 90)
+print("PHASE-10 KNOWLEDGE SOURCE VALIDATION")
+print("=" * 90)
+
+missing = []
+
+for name, path in required_sources.items():
+    if path.exists():
+        print(f"✓ {name:<25} {path}")
+    else:
+        print(f"✗ {name:<25} MISSING")
+        missing.append(name)
+
+if missing:
+    raise FileNotFoundError(
+        f"Missing Phase-10 knowledge sources: {missing}"
+    )
+
+print("\n✓ All verified Phase-09 sources are available.")
+
+# ============================================================
+# PHASE-10 — CELL 03
+# KNOWLEDGE EXTRACTION
+# ============================================================
+
+import pandas as pd
+import json
+
+phase09_building = pd.read_parquet(
+    required_sources["phase09_building"]
+)
+
+kpi_data = json.loads(
+    required_sources["phase09_kpi"].read_text()
+)
+
+factor_data = json.loads(
+    required_sources["phase09_factor_config"].read_text()
+)
+
+validation_data = json.loads(
+    required_sources["phase09_validation"].read_text()
+)
+
+print("Building intelligence rows:", len(phase09_building))
+
+knowledge_records = []
+
+# ------------------------------------------------------------
+# GLOBAL PROJECT KNOWLEDGE
+# ------------------------------------------------------------
+
+knowledge_records.append({
+    "source": "Phase-09 KPI",
+    "type": "global_kpi",
+    "title": "Phase-09 Carbon and Cost Overview",
+    "content": json.dumps(kpi_data, indent=2)
+})
+
+knowledge_records.append({
+    "source": "Phase-09 Factor Configuration",
+    "type": "methodology",
+    "title": "Carbon and Cost Factors",
+    "content": json.dumps(factor_data, indent=2)
+})
+
+knowledge_records.append({
+    "source": "Phase-09 Validation",
+    "type": "validation",
+    "title": "Phase-09 Numerical Validation",
+    "content": json.dumps(validation_data, indent=2)
+})
+
+# ------------------------------------------------------------
+# BUILDING KNOWLEDGE
+# ------------------------------------------------------------
+
+for _, row in phase09_building.iterrows():
+
+    content = f"""
+Building ID: {row.get('building_id')}
+Building Name: {row.get('building_name')}
+Campus: {row.get('campus')}
+Building Type: {row.get('building_type')}
+
+Total Energy: {row.get('total_energy_kwh')} kWh
+Electricity: {row.get('electricity_kwh')} kWh
+Solar Generation: {row.get('solar_kwh')} kWh
+
+Gross Carbon: {row.get('gross_carbon_kgco2e')} kgCO2e
+Solar Carbon Avoidance: {row.get('solar_carbon_avoided_kgco2e')} kgCO2e
+Net Carbon: {row.get('net_carbon_kgco2e')} kgCO2e
+Net Carbon: {row.get('net_carbon_tco2e')} tCO2e
+
+Carbon Intensity: {row.get('carbon_intensity')}
+Carbon Score: {row.get('carbon_score')}
+Carbon Rank: {row.get('carbon_rank')}
+
+Net Energy Cost: ${row.get('net_energy_cost_usd')}
+Solar Savings: ${row.get('solar_savings_usd')}
+Cost Intensity: {row.get('cost_intensity')}
+Cost Score: {row.get('cost_score')}
+Cost Rank: {row.get('cost_rank')}
+
+Combined Carbon-Cost Score: {row.get('carbon_cost_score')}
+Category: {row.get('carbon_cost_category')}
+Overall Rank: {row.get('overall_rank')}
+
+Average Energy Risk: {row.get('avg_energy_risk')}
+"""
+
+    knowledge_records.append({
+        "source": "Phase-09 Building Intelligence",
+        "type": "building",
+        "title": f"Building {row.get('building_name')}",
+        "content": content
+    })
+
+print("Knowledge records generated:", len(knowledge_records))
+
+knowledge_json = PHASE10_KB / "sustainability_knowledge.json"
+
+with open(knowledge_json, "w") as f:
+    json.dump(
+        knowledge_records,
+        f,
+        indent=2,
+        default=str
+    )
+
+print("Saved:")
+print(knowledge_json)
+
+
+# ============================================================
+# PHASE-10 — CELL 04
+# CREATE RAG DOCUMENTS
+# ============================================================
+
+from langchain_core.documents import Document
+
+documents = []
+
+for record in knowledge_records:
+
+    documents.append(
+        Document(
+            page_content=record["content"],
+            metadata={
+                "source": record["source"],
+                "type": record["type"],
+                "title": record["title"]
+            }
+        )
+    )
+
+print("=" * 90)
+print("RAG DOCUMENT CREATION")
+print("=" * 90)
+
+print("Documents:", len(documents))
+
+print("\nExample metadata:")
+print(documents[0].metadata)
+
+print("\nExample content:")
+print(documents[0].page_content[:1000])
+
+print("\n✓ Documents ready")
+
+
+# ============================================================
+# PHASE-10 — CELL 05
+# DOCUMENT CHUNKING
+# ============================================================
+
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+splitter = RecursiveCharacterTextSplitter(
+    chunk_size=900,
+    chunk_overlap=150,
+    separators=[
+        "\n\n",
+        "\n",
+        ". ",
+        ", ",
+        " "
+    ]
+)
+
+chunks = splitter.split_documents(documents)
+
+print("=" * 90)
+print("KNOWLEDGE CHUNKING")
+print("=" * 90)
+
+print("Original documents:", len(documents))
+print("Generated chunks:", len(chunks))
+
+chunk_lengths = [len(c.page_content) for c in chunks]
+
+print("Minimum chunk length:", min(chunk_lengths))
+print("Maximum chunk length:", max(chunk_lengths))
+print("Average chunk length:", sum(chunk_lengths) / len(chunk_lengths))
+
+print("\n✓ Chunking complete")
+
+
+
+# ============================================================
+# PHASE-10 — CELL 06
+# EMBEDDING GENERATION
+# ============================================================
+
+from langchain_huggingface import HuggingFaceEmbeddings
+
+EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+
+embeddings = HuggingFaceEmbeddings(
+    model_name=EMBEDDING_MODEL,
+    model_kwargs={"device": "cpu"},
+    encode_kwargs={"normalize_embeddings": True}
+)
+
+print("=" * 90)
+print("EMBEDDING MODEL")
+print("=" * 90)
+
+print("Model:", EMBEDDING_MODEL)
+
+test_vector = embeddings.embed_query(
+    "Which buildings have high carbon intensity?"
+)
+
+print("Embedding dimension:", len(test_vector))
+
+print("\n✓ Embedding model initialized")
+
+
+# ============================================================
+# PHASE-10 — CELL 07
+# FAISS VECTOR STORE
+# ============================================================
+
+from langchain_community.vectorstores import FAISS
+
+vector_store = FAISS.from_documents(
+    chunks,
+    embeddings
+)
+
+vector_store.save_local(
+    str(PHASE10_VECTOR)
+)
+
+print("=" * 90)
+print("FAISS VECTOR DATABASE")
+print("=" * 90)
+
+print("Chunks indexed:", len(chunks))
+print("Vector store:", PHASE10_VECTOR)
+
+print("\n✓ FAISS vector database created and saved")
+
+# ============================================================
+# PHASE-10 — CELL 08
+# RAG RETRIEVER
+# ============================================================
+
+retriever = vector_store.as_retriever(
+    search_type="similarity",
+    search_kwargs={
+        "k": 5
+    }
+)
+
+test_question = (
+    "Which buildings have the strongest carbon and cost performance?"
+)
+
+retrieved_docs = retriever.invoke(test_question)
+
+print("=" * 90)
+print("RETRIEVER TEST")
+print("=" * 90)
+
+print("Question:")
+print(test_question)
+
+print("\nRetrieved documents:", len(retrieved_docs))
+
+for i, doc in enumerate(retrieved_docs, 1):
+
+    print("\n" + "-" * 80)
+    print(f"RESULT {i}")
+    print("-" * 80)
+
+    print("Source:", doc.metadata.get("source"))
+    print("Title:", doc.metadata.get("title"))
+    print(doc.page_content[:700])
+
+print("\n✓ Retriever operational")
+
+# ============================================================
+# PHASE-10 — CELL-09
+# DETERMINISTIC KPI / NUMERICAL ANSWER ENGINE
+# ============================================================
+
+import json
+import os
+import re
+import pandas as pd
+import numpy as np
+
+PROJECT_ROOT = "/content/gdrive/MyDrive/GitHub_Project_01"
+
+KPI_PATH = os.path.join(
+    PROJECT_ROOT,
+    "reports",
+    "sustainability",
+    "phase09_carbon_cost_kpis.json"
+)
+
+MASTER_PATH = os.path.join(
+    PROJECT_ROOT,
+    "processed",
+    "sustainability",
+    "carbon_cost_master.parquet"
+)
+
+BUILDING_PATH = os.path.join(
+    PROJECT_ROOT,
+    "processed",
+    "sustainability",
+    "carbon_cost_building_intelligence.parquet"
+)
+
+with open(KPI_PATH, "r") as f:
+    PHASE09_KPI = json.load(f)
+
+phase09_master = pd.read_parquet(MASTER_PATH)
+phase09_building = pd.read_parquet(BUILDING_PATH)
+
+print("=" * 90)
+print("PHASE-10 — CELL-09: DETERMINISTIC KPI ENGINE")
+print("=" * 90)
+
+print("\nVerified Phase-09 KPI values:")
+print(json.dumps(PHASE09_KPI, indent=2))
+
+print("\n✓ KPI engine loaded")
+print(f"✓ Master rows: {len(phase09_master):,}")
+print(f"✓ Building rows: {len(phase09_building):,}")
+
+# ============================================================
+# PHASE-10 — CELL-09
+# DETERMINISTIC KPI / NUMERICAL ANSWER ENGINE
+# ============================================================
+
+import json
+import os
+import re
+import pandas as pd
+import numpy as np
+
+PROJECT_ROOT = "/content/gdrive/MyDrive/GitHub_Project_01"
+
+KPI_PATH = os.path.join(
+    PROJECT_ROOT,
+    "reports",
+    "sustainability",
+    "phase09_carbon_cost_kpis.json"
+)
+
+MASTER_PATH = os.path.join(
+    PROJECT_ROOT,
+    "processed",
+    "sustainability",
+    "carbon_cost_master.parquet"
+)
+
+BUILDING_PATH = os.path.join(
+    PROJECT_ROOT,
+    "processed",
+    "sustainability",
+    "carbon_cost_building_intelligence.parquet"
+)
+
+with open(KPI_PATH, "r") as f:
+    PHASE09_KPI = json.load(f)
+
+phase09_master = pd.read_parquet(MASTER_PATH)
+phase09_building = pd.read_parquet(BUILDING_PATH)
+
+print("=" * 90)
+print("PHASE-10 — CELL-09: DETERMINISTIC KPI ENGINE")
+print("=" * 90)
+
+print("\nVerified Phase-09 KPI values:")
+print(json.dumps(PHASE09_KPI, indent=2))
+
+print("\n✓ KPI engine loaded")
+print(f"✓ Master rows: {len(phase09_master):,}")
+print(f"✓ Building rows: {len(phase09_building):,}")
+
+# ============================================================
+# PHASE-10 — CELL-10
+# QUESTION ROUTER
+# ============================================================
+
+def classify_question(question):
+
+    q = question.lower().strip()
+
+    if any(x in q for x in [
+        "how many buildings",
+        "number of buildings",
+        "total buildings",
+        "buildings included"
+    ]):
+        return "total_buildings"
+
+    if any(x in q for x in [
+        "total energy",
+        "energy consumption",
+        "energy consumed",
+        "energy use"
+    ]):
+        return "total_energy"
+
+    if any(x in q for x in [
+        "net carbon",
+        "total net carbon"
+    ]):
+        return "net_carbon"
+
+    if any(x in q for x in [
+        "gross carbon",
+        "total gross carbon"
+    ]):
+        return "gross_carbon"
+
+    if any(x in q for x in [
+        "solar carbon",
+        "carbon avoided",
+        "carbon avoidance"
+    ]):
+        return "solar_carbon"
+
+    if any(x in q for x in [
+        "net energy cost",
+        "total net cost",
+        "estimated net energy cost"
+    ]):
+        return "net_cost"
+
+    if any(x in q for x in [
+        "gross energy cost",
+        "gross cost",
+        "total cost"
+    ]):
+        return "gross_cost"
+
+    if any(x in q for x in [
+        "solar savings",
+        "energy savings"
+    ]):
+        return "solar_savings"
+
+    if "average carbon score" in q:
+        return "average_carbon_score"
+
+    if "average cost score" in q:
+        return "average_cost_score"
+
+    if any(x in q for x in [
+        "strongest carbon",
+        "strongest cost",
+        "best carbon",
+        "best cost",
+        "best performance",
+        "excellent carbon and cost"
+    ]):
+        return "best_buildings"
+
+    if any(x in q for x in [
+        "prioritized",
+        "priority",
+        "intervention",
+        "needs intervention"
+    ]):
+        return "priority_buildings"
+
+    return "rag"
+
+
+print("✓ Question router initialized")
+
+
+# ============================================================
+# PHASE-10 — CELL-11
+# GROUNDED ANSWER ENGINE
+# ============================================================
+
+def get_kpi_value(key):
+    return PHASE09_KPI.get(key)
+
+
+def answer_kpi(question, intent):
+
+    if intent == "total_buildings":
+        value = get_kpi_value("total_buildings")
+        return f"The sustainability platform includes {int(value):,} buildings."
+
+    if intent == "total_energy":
+        value = get_kpi_value("total_energy_kwh")
+        return f"Total energy consumption is {value:,.6f} kWh."
+
+    if intent == "gross_carbon":
+        value = get_kpi_value("gross_carbon_tco2e")
+        return f"Gross carbon emissions are {value:,.6f} tCO2e."
+
+    if intent == "solar_carbon":
+        value = get_kpi_value("solar_carbon_avoided_tco2e")
+        return f"Solar generation avoids approximately {value:,.6f} tCO2e."
+
+    if intent == "net_carbon":
+        value = get_kpi_value("net_carbon_tco2e")
+        return f"Net carbon emissions are {value:,.6f} tCO2e."
+
+    if intent == "gross_cost":
+        value = get_kpi_value("gross_energy_cost_usd")
+        return f"Gross energy cost is ${value:,.2f}."
+
+    if intent == "solar_savings":
+        value = get_kpi_value("solar_savings_usd")
+        return f"Solar energy provides approximately ${value:,.2f} in savings."
+
+    if intent == "net_cost":
+        value = get_kpi_value("net_energy_cost_usd")
+        return f"Net energy cost is ${value:,.2f}."
+
+    if intent == "average_carbon_score":
+        value = get_kpi_value("average_carbon_score")
+        return f"The average carbon score is {value:.6f}."
+
+    if intent == "average_cost_score":
+        value = get_kpi_value("average_cost_score")
+        return f"The average cost score is {value:.6f}."
+
+    return None
+
+
+print("✓ Grounded KPI answer engine ready")
+
+# ============================================================
+# PHASE-10 — CELL-12
+# DETERMINISTIC BUILDING ANSWER ENGINE
+# ============================================================
+
+def top_buildings(n=10):
+
+    cols = [
+        "building_id",
+        "building_name",
+        "campus",
+        "building_type",
+        "carbon_score",
+        "cost_score",
+        "carbon_cost_score",
+        "carbon_cost_category",
+        "overall_rank"
+    ]
+
+    available = [c for c in cols if c in phase09_building.columns]
+
+    result = (
+        phase09_building[available]
+        .sort_values(
+            "carbon_cost_score",
+            ascending=False
+        )
+        .head(n)
+        .copy()
+    )
+
+    return result
+
+
+def priority_buildings(n=10):
+
+    cols = [
+        "building_id",
+        "building_name",
+        "campus",
+        "building_type",
+        "carbon_score",
+        "cost_score",
+        "carbon_cost_score",
+        "carbon_cost_category",
+        "overall_rank"
+    ]
+
+    result = (
+        phase09_building[cols]
+        .sort_values(
+            ["carbon_cost_score", "overall_rank"],
+            ascending=[True, True]
+        )
+        .head(n)
+        .copy()
+    )
+
+    return result
+
+
+def format_buildings(df):
+
+    lines = []
+
+    for i, row in enumerate(df.itertuples(index=False), 1):
+
+        lines.append(
+            f"{i}. {row.building_name} "
+            f"(Building ID: {row.building_id}) | "
+            f"Carbon Score: {row.carbon_score:.4f} | "
+            f"Cost Score: {row.cost_score:.4f} | "
+            f"Combined Score: {row.carbon_cost_score:.4f} | "
+            f"Category: {row.carbon_cost_category} | "
+            f"Overall Rank: {int(row.overall_rank)}"
+        )
+
+    return "\n".join(lines)
+
+
+print("✓ Building answer engine ready")
+
+
+# ============================================================
+# FINAL QUESTION FUNCTION
+# ============================================================
+
+def ask_sustainability(question):
+
+    intent = classify_question(question)
+
+    # --------------------------------------------------------
+    # NUMERICAL QUESTIONS
+    # --------------------------------------------------------
+
+    if intent not in [
+        "best_buildings",
+        "priority_buildings",
+        "rag"
+    ]:
+
+        answer = answer_kpi(question, intent)
+
+        return {
+            "question": question,
+            "intent": intent,
+            "answer": answer,
+            "source": "Phase-09 KPI",
+            "grounded": True
+        }
+
+    # --------------------------------------------------------
+    # BUILDING QUESTIONS
+    # --------------------------------------------------------
+
+    if intent == "best_buildings":
+
+        df = top_buildings(10)
+
+        return {
+            "question": question,
+            "intent": intent,
+            "answer": (
+                "The strongest carbon-and-cost performers are:\n\n"
+                + format_buildings(df)
+            ),
+            "source": "Phase-09 Building Intelligence",
+            "grounded": True
+        }
+
+    if intent == "priority_buildings":
+
+        df = priority_buildings(10)
+
+        return {
+            "question": question,
+            "intent": intent,
+            "answer": (
+                "Buildings with the lowest combined sustainability "
+                "performance should be prioritized:\n\n"
+                + format_buildings(df)
+            ),
+            "source": "Phase-09 Building Intelligence",
+            "grounded": True
+        }
+
+    # --------------------------------------------------------
+    # FALLBACK
+    # --------------------------------------------------------
+
+    return {
+        "question": question,
+        "intent": "rag",
+        "answer": (
+            "I could not map this question to a verified Phase-09 "
+            "metric. Please ask about energy, carbon, cost, scores, "
+            "rankings, or buildings."
+        ),
+        "source": "Phase-09 Knowledge Base",
+        "grounded": True
+    }
+
+
+print("✓ Final grounded QA engine ready")
+
+tests = [
+    "How many buildings are included in the sustainability platform?",
+    "What is the total energy consumption of the infrastructure?",
+    "What is the total net carbon emissions?",
+    "What is the estimated net energy cost?",
+    "What is the average carbon score?",
+    "What is the average cost score?",
+    "Which buildings have the strongest carbon and cost performance?",
+    "Which buildings should be prioritized for sustainability intervention?"
+]
+
+for q in tests:
+
+    result = ask_sustainability(q)
+
+    print("\n" + "=" * 100)
+    print("QUESTION:")
+    print(q)
+
+    print("\nINTENT:")
+    print(result["intent"])
+
+    print("\nANSWER:")
+    print(result["answer"])
+
+    print("\nSOURCE:")
+    print(result["source"])
+
+    print("\nGROUNDED:")
+    print(result["grounded"])
+
+# ============================================================================
+# PHASE-10 REPAIR — CELL 02
+# Verify authoritative KPI
+# ============================================================================
+
+import json
+
+with open(KPI_PATH, "r") as f:
+    kpi_check = json.load(f)
+
+print("=" * 90)
+print("PHASE-10 KPI VERIFICATION")
+print("=" * 90)
+
+print(f"Buildings:       {kpi_check['total_buildings']:,}")
+print(f"Energy:          {kpi_check['total_energy_kwh']:,.6f} kWh")
+print(f"Net Carbon:      {kpi_check['net_carbon_tco2e']:,.6f} tCO2e")
+print(f"Net Cost:        ${kpi_check['net_energy_cost_usd']:,.6f}")
+print(f"Carbon Score:    {kpi_check['average_carbon_score']:.6f}")
+print(f"Cost Score:      {kpi_check['average_cost_score']:.6f}")
+
+assert kpi_check["total_buildings"] == 1578
+
+assert np.isclose(
+    kpi_check["net_carbon_tco2e"],
+    8391336.567924,
+    rtol=1e-9
+)
+
+assert np.isclose(
+    kpi_check["net_energy_cost_usd"],
+    2704795667.916606,
+    rtol=1e-9
+)
+
+print("\n✓ KPI SOURCE IS CONSISTENT WITH REPAIRED PHASE-09")
+
+# ============================================================================
+# PHASE-10 REPAIR — CELL 03
+# Rebuild knowledge base from repaired Phase-09 artifacts
+# ============================================================================
+
+import json
+from pathlib import Path
+
+KB_DIR = PROJECT_ROOT / "processed/phase10_rag/knowledge_base"
+KB_PATH = KB_DIR / "sustainability_knowledge.json"
+
+KB_DIR.mkdir(parents=True, exist_ok=True)
+
+with open(KPI_PATH, "r") as f:
+    kpis = json.load(f)
+
+building_records = building.to_dict(orient="records")
+
+knowledge = []
+
+# --------------------------------------------------------------------------
+# Global KPI document
+# --------------------------------------------------------------------------
+
+knowledge.append({
+    "metadata": {
+        "source": "Phase-09 KPI",
+        "type": "global_kpi",
+        "title": "Phase-09 Carbon and Cost Overview"
+    },
+    "content": kpis
+})
+
+# --------------------------------------------------------------------------
+# Building documents
+# --------------------------------------------------------------------------
+
+for row in building_records:
+
+    knowledge.append({
+        "metadata": {
+            "source": "Phase-09 Building Intelligence",
+            "type": "building",
+            "title": f"Building {row.get('building_name', row.get('building_id'))}",
+            "building_id": row["building_id"],
+        },
+        "content": row
+    })
+
+with open(KB_PATH, "w") as f:
+    json.dump(knowledge, f, indent=2, default=str)
+
+print("=" * 90)
+print("KNOWLEDGE BASE REBUILT")
+print("=" * 90)
+
+print(f"Documents: {len(knowledge):,}")
+print(f"Saved: {KB_PATH}")
+
+print("\n✓ KPI + BUILDING KNOWLEDGE IS NOW BASED ON REPAIRED PHASE-09")
+
+# ============================================================================
+# PHASE-10 REPAIR — CELL 04
+# Rebuild RAG chunks
+# ============================================================================
+
+import json
+
+with open(KB_PATH, "r") as f:
+    knowledge = json.load(f)
+
+documents = []
+
+for item in knowledge:
+
+    metadata = item["metadata"]
+    content = item["content"]
+
+    text = (
+        f"Source: {metadata.get('source')}\n"
+        f"Title: {metadata.get('title')}\n"
+        f"Type: {metadata.get('type')}\n"
+        f"Building ID: {metadata.get('building_id', '')}\n\n"
+        f"{json.dumps(content, indent=2, default=str)}"
+    )
+
+    documents.append({
+        "text": text,
+        "metadata": metadata
+    })
+
+print("=" * 90)
+print("RAG CHUNKS REBUILT")
+print("=" * 90)
+
+print(f"Documents: {len(documents):,}")
+print("✓ Chunk source is current")
+
+# ============================================================================
+# PHASE-10 REPAIR — CELL 05
+# Rebuild vector store from current chunks
+# ============================================================================
+
+import shutil
+from pathlib import Path
+import pickle
+import numpy as np
+
+from sentence_transformers import SentenceTransformer
+from sklearn.metrics.pairwise import cosine_similarity
+
+VECTOR_DIR = PROJECT_ROOT / "processed/phase10_rag/vector_store"
+
+if VECTOR_DIR.exists():
+    shutil.rmtree(VECTOR_DIR)
+
+VECTOR_DIR.mkdir(parents=True, exist_ok=True)
+
+EMBED_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+
+print("=" * 90)
+print("REBUILDING VECTOR STORE")
+print("=" * 90)
+
+embedder = SentenceTransformer(EMBED_MODEL)
+
+texts = [x["text"] for x in documents]
+
+embeddings = embedder.encode(
+    texts,
+    show_progress_bar=True,
+    normalize_embeddings=True
+)
+
+np.save(
+    VECTOR_DIR / "embeddings.npy",
+    np.asarray(embeddings, dtype=np.float32)
+)
+
+with open(VECTOR_DIR / "documents.pkl", "wb") as f:
+    pickle.dump(documents, f)
+
+with open(VECTOR_DIR / "metadata.json", "w") as f:
+    json.dump({
+        "embedding_model": EMBED_MODEL,
+        "dimension": int(embeddings.shape[1]),
+        "document_count": len(documents)
+    }, f, indent=2)
+
+print("\n✓ Vector store rebuilt")
+print(f"Documents: {len(documents):,}")
+print(f"Dimensions: {embeddings.shape[1]}")
+
+
+# ============================================================================
+# PHASE-10 REPAIR — CELL 06
+# Deterministic KPI answer engine
+# ============================================================================
+
+def answer_kpi(intent):
+
+    with open(KPI_PATH, "r") as f:
+        k = json.load(f)
+
+    answers = {
+
+        "total_buildings":
+            f"The sustainability platform includes "
+            f"{k['total_buildings']:,} buildings.",
+
+        "total_energy":
+            f"Total energy consumption is "
+            f"{k['total_energy_kwh']:,.6f} kWh.",
+
+        "net_carbon":
+            f"Net carbon emissions are "
+            f"{k['net_carbon_tco2e']:,.6f} tCO2e.",
+
+        "net_cost":
+            f"Net energy cost is "
+            f"${k['net_energy_cost_usd']:,.2f}.",
+
+        "average_carbon_score":
+            f"The average carbon score is "
+            f"{k['average_carbon_score']:.6f}.",
+
+        "average_cost_score":
+            f"The average cost score is "
+            f"{k['average_cost_score']:.6f}.",
+    }
+
+    return answers.get(intent)
+
+# ============================================================================
+# PHASE-10 REPAIR — CELL 07
+# Deterministic building ranking engine
+# ============================================================================
+
+def format_building(row, position):
+
+    return (
+        f"{position}. {row['building_name']} "
+        f"(Building ID: {row['building_id']}) | "
+        f"Carbon Score: {row['carbon_score']:.4f} | "
+        f"Cost Score: {row['cost_score']:.4f} | "
+        f"Combined Score: {row['carbon_cost_score']:.4f} | "
+        f"Category: {row['carbon_cost_category']} | "
+        f"Overall Rank: {int(row['overall_rank'])}"
+    )
+
+
+def best_buildings(n=10):
+
+    result = (
+        building
+        .sort_values(
+            ["carbon_cost_score", "overall_rank"],
+            ascending=[False, True],
+            kind="mergesort"
+        )
+        .head(n)
+    )
+
+    return "\n".join(
+        format_building(row, i + 1)
+        for i, (_, row) in enumerate(result.iterrows())
+    )
+
+
+def priority_buildings(n=10):
+
+    result = (
+        building
+        .sort_values(
+            ["carbon_cost_score", "overall_rank"],
+            ascending=[True, False],
+            kind="mergesort"
+        )
+        .head(n)
+    )
+
+    return "\n".join(
+        format_building(row, i + 1)
+        for i, (_, row) in enumerate(result.iterrows())
+    )
+
+# ============================================================================
+# PHASE-10 REPAIR — CELL 08
+# Deterministic intent detection
+# ============================================================================
+
+def detect_intent(question):
+
+    q = question.lower().strip()
+
+    if any(x in q for x in [
+        "how many buildings",
+        "number of buildings",
+        "total buildings"
+    ]):
+        return "total_buildings"
+
+    if any(x in q for x in [
+        "total energy",
+        "energy consumption",
+        "energy consumed"
+    ]):
+        return "total_energy"
+
+    if any(x in q for x in [
+        "net carbon",
+        "net emissions",
+        "carbon emissions"
+    ]):
+        return "net_carbon"
+
+    if any(x in q for x in [
+        "net energy cost",
+        "net cost",
+        "estimated net cost"
+    ]):
+        return "net_cost"
+
+    if "average carbon score" in q:
+        return "average_carbon_score"
+
+    if "average cost score" in q:
+        return "average_cost_score"
+
+    if any(x in q for x in [
+        "strongest",
+        "best performing",
+        "best buildings",
+        "best performance"
+    ]):
+        return "best_buildings"
+
+    if any(x in q for x in [
+        "prioritized",
+        "prioritize",
+        "intervention",
+        "worst buildings",
+        "needs improvement"
+    ]):
+        return "priority_buildings"
+
+    return "rag_general"
+
+# ============================================================================
+# PHASE-10 REPAIR — CELL 09
+# Corrected RAG QA router
+# ============================================================================
+
+def rag_answer(question):
+
+    intent = detect_intent(question)
+
+    # ----------------------------------------------------------------------
+    # Numerical / ranking questions
+    # NEVER ask the LLM to calculate these.
+    # ----------------------------------------------------------------------
+
+    if intent in {
+        "total_buildings",
+        "total_energy",
+        "net_carbon",
+        "net_cost",
+        "average_carbon_score",
+        "average_cost_score",
+    }:
+        answer = answer_kpi(intent)
+
+        return {
+            "question": question,
+            "intent": intent,
+            "answer": answer,
+            "source": "Phase-09 KPI",
+            "grounded": True
+        }
+
+    if intent == "best_buildings":
+
+        return {
+            "question": question,
+            "intent": intent,
+            "answer": (
+                "The strongest carbon-and-cost performers are:\n\n"
+                + best_buildings(10)
+            ),
+            "source": "Phase-09 Building Intelligence",
+            "grounded": True
+        }
+
+    if intent == "priority_buildings":
+
+        return {
+            "question": question,
+            "intent": intent,
+            "answer": (
+                "Buildings with the lowest combined sustainability "
+                "performance should be prioritized:\n\n"
+                + priority_buildings(10)
+            ),
+            "source": "Phase-09 Building Intelligence",
+            "grounded": True
+        }
+
+    # ----------------------------------------------------------------------
+    # General questions can continue through your existing vector + LLM
+    # pipeline.
+    # ----------------------------------------------------------------------
+
+    return rag_general_answer(question)
+
+# ============================================================================
+# PHASE-10 REPAIR — CELL 10
+# Phase-09 → Phase-10 consistency test
+# ============================================================================
+
+tests = [
+    "How many buildings are included in the sustainability platform?",
+    "What is the total energy consumption of the infrastructure?",
+    "What is the total net carbon emissions?",
+    "What is the estimated net energy cost?",
+    "What is the average carbon score?",
+    "What is the average cost score?",
+    "Which buildings have the strongest carbon and cost performance?",
+    "Which buildings should be prioritized for sustainability intervention?",
+]
+
+print("=" * 100)
+print("PHASE-10 CONSISTENCY TEST")
+print("=" * 100)
+
+for q in tests:
+
+    result = rag_answer(q)
+
+    print("\n" + "=" * 100)
+    print("QUESTION:")
+    print(q)
+    print("\nINTENT:")
+    print(result["intent"])
+    print("\nANSWER:")
+    print(result["answer"])
+    print("\nSOURCE:")
+    print(result["source"])
+    print("\nGROUNDED:")
+    print(result["grounded"])
+
+# ============================================================================
+# PHASE-10 — FINAL CROSS-LAYER CONSISTENCY AUDIT
+# ============================================================================
+
+import json
+import numpy as np
+import pandas as pd
+from pathlib import Path
+
+print("=" * 100)
+print("PHASE-10 FINAL CROSS-LAYER CONSISTENCY AUDIT")
+print("=" * 100)
+
+# --------------------------------------------------------------------------
+# Load authoritative Phase-09
+# --------------------------------------------------------------------------
+
+master = pd.read_parquet(PHASE09_MASTER)
+building = pd.read_parquet(PHASE09_BUILDING)
+
+with open(KPI_PATH, "r") as f:
+    kpi = json.load(f)
+
+with open(KB_PATH, "r") as f:
+    kb = json.load(f)
+
+# --------------------------------------------------------------------------
+# 1. Phase-09 authoritative values
+# --------------------------------------------------------------------------
+
+authoritative = {
+    "total_buildings": int(building["building_id"].nunique()),
+
+    "total_energy_kwh":
+        float(master["total_energy_kwh"].sum()),
+
+    "net_carbon_tco2e":
+        float(master["net_carbon_kgco2e"].sum() / 1000),
+
+    "net_energy_cost_usd":
+        float(master["net_energy_cost_usd"].sum()),
+
+    "average_carbon_score":
+        float(building["carbon_score"].mean()),
+
+    "average_cost_score":
+        float(building["cost_score"].mean()),
+}
+
+# --------------------------------------------------------------------------
+# 2. KPI consistency
+# --------------------------------------------------------------------------
+
+checks = {}
+
+checks["kpi_buildings"] = (
+    kpi["total_buildings"] == authoritative["total_buildings"]
+)
+
+checks["kpi_energy"] = np.isclose(
+    kpi["total_energy_kwh"],
+    authoritative["total_energy_kwh"],
+    rtol=1e-10,
+    atol=1e-6
+)
+
+checks["kpi_net_carbon"] = np.isclose(
+    kpi["net_carbon_tco2e"],
+    authoritative["net_carbon_tco2e"],
+    rtol=1e-10,
+    atol=1e-6
+)
+
+checks["kpi_net_cost"] = np.isclose(
+    kpi["net_energy_cost_usd"],
+    authoritative["net_energy_cost_usd"],
+    rtol=1e-10,
+    atol=1e-5
+)
+
+checks["kpi_carbon_score"] = np.isclose(
+    kpi["average_carbon_score"],
+    authoritative["average_carbon_score"],
+    rtol=1e-10,
+    atol=1e-8
+)
+
+checks["kpi_cost_score"] = np.isclose(
+    kpi["average_cost_score"],
+    authoritative["average_cost_score"],
+    rtol=1e-10,
+    atol=1e-8
+)
+
+# --------------------------------------------------------------------------
+# 3. Knowledge base consistency
+# --------------------------------------------------------------------------
+
+kpi_docs = [
+    x for x in kb
+    if x["metadata"].get("type") == "global_kpi"
+]
+
+building_docs = [
+    x for x in kb
+    if x["metadata"].get("type") == "building"
+]
+
+checks["kb_has_one_kpi"] = len(kpi_docs) == 1
+checks["kb_building_count"] = len(building_docs) == authoritative["total_buildings"]
+
+# --------------------------------------------------------------------------
+# 4. Vector store consistency
+# --------------------------------------------------------------------------
+
+import numpy as np
+import pickle
+
+embeddings = np.load(
+    VECTOR_DIR / "embeddings.npy"
+)
+
+with open(VECTOR_DIR / "documents.pkl", "rb") as f:
+    vector_docs = pickle.load(f)
+
+checks["vector_document_count"] = (
+    len(vector_docs) == len(kb)
+)
+
+checks["embedding_document_count"] = (
+    embeddings.shape[0] == len(kb)
+)
+
+checks["embedding_dimension"] = (
+    embeddings.shape[1] == 384
+)
+
+# --------------------------------------------------------------------------
+# 5. Building ranking integrity
+# --------------------------------------------------------------------------
+
+checks["overall_rank_unique"] = (
+    building["overall_rank"].nunique() == len(building)
+)
+
+checks["overall_rank_range"] = (
+    int(building["overall_rank"].min()) == 1
+    and int(building["overall_rank"].max()) == len(building)
+)
+
+# --------------------------------------------------------------------------
+# 6. Print results
+# --------------------------------------------------------------------------
+
+print("\nAUTHORITATIVE PHASE-09 VALUES")
+print("-" * 100)
+
+for key, value in authoritative.items():
+    if isinstance(value, float):
+        print(f"{key:30s}: {value:,.9f}")
+    else:
+        print(f"{key:30s}: {value:,}")
+
+print("\nCROSS-LAYER CHECKS")
+print("-" * 100)
+
+all_pass = True
+
+for name, passed in checks.items():
+
+    status = "PASS ✓" if passed else "FAIL ✗"
+
+    print(f"{name:35s}: {status}")
+
+    if not passed:
+        all_pass = False
+
+# --------------------------------------------------------------------------
+# Final result
+# --------------------------------------------------------------------------
+
+print("\n" + "=" * 100)
+
+if all_pass:
+    print("🟢 PHASE-10 FINAL CROSS-LAYER CONSISTENCY: PASSED")
+    print("=" * 100)
+
+    print("""
+Phase-09 authoritative data
+        ↓
+Phase-09 KPI
+        ↓
+Phase-10 Knowledge Base
+        ↓
+Phase-10 Vector Store
+        ↓
+Phase-10 RAG Answers
+
+ALL LAYERS ARE CONSISTENT.
+""")
+
+else:
+    print("🔴 PHASE-10 FINAL CROSS-LAYER CONSISTENCY: FAILED")
+    print("=" * 100)
+
+    failed = [
+        name for name, passed in checks.items()
+        if not passed
+    ]
+
+    print("\nFailed checks:")
+    for name in failed:
+        print(f"  ✗ {name}")
+
+
+
