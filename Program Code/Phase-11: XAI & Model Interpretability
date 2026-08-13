@@ -1,0 +1,4083 @@
+from google.colab import drive
+
+drive.mount("/content/drive")
+
+from pathlib import Path
+import os
+import json
+import warnings
+
+warnings.filterwarnings("ignore")
+
+PROJECT_ROOT = Path("/content/gdrive/MyDrive/GitHub_Project_01")
+
+# Fallback in case your Drive is mounted at /content/drive
+if not PROJECT_ROOT.exists():
+    PROJECT_ROOT = Path("/content/drive/MyDrive/GitHub_Project_01")
+
+if not PROJECT_ROOT.exists():
+    raise FileNotFoundError(
+        f"Project root not found.\n"
+        f"Expected:\n"
+        f"/content/gdrive/MyDrive/GitHub_Project_01\n"
+        f"or\n"
+        f"/content/drive/MyDrive/GitHub_Project_01"
+    )
+
+print("PROJECT ROOT:")
+print(PROJECT_ROOT)
+
+PHASE11_ROOT = PROJECT_ROOT / "processed" / "phase11_xai"
+REPORT_ROOT = PROJECT_ROOT / "reports" / "phase11_xai"
+
+DIRS = [
+    PHASE11_ROOT,
+    PHASE11_ROOT / "samples",
+    PHASE11_ROOT / "feature_importance",
+    PHASE11_ROOT / "shap",
+    PHASE11_ROOT / "local",
+    REPORT_ROOT,
+    REPORT_ROOT / "feature_importance",
+    REPORT_ROOT / "shap",
+    REPORT_ROOT / "local",
+    REPORT_ROOT / "plots",
+]
+
+for directory in DIRS:
+    directory.mkdir(parents=True, exist_ok=True)
+
+print("Phase-11 directories created.")
+
+!pip -q install shap xgboost lightgbm joblib pyarrow
+
+import os
+import json
+import pickle
+import joblib
+import warnings
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+import shap
+
+from sklearn.base import BaseEstimator
+
+warnings.filterwarnings("ignore")
+
+print("SHAP:", shap.__version__)
+print("NumPy:", np.__version__)
+print("Pandas:", pd.__version__)
+
+def inventory_project(root, max_rows=5000):
+
+    rows = []
+
+    for path in root.rglob("*"):
+        if not path.is_file():
+            continue
+
+        try:
+            size_mb = path.stat().st_size / (1024 ** 2)
+        except Exception:
+            size_mb = None
+
+        rows.append({
+            "relative_path": str(path.relative_to(root)),
+            "extension": path.suffix.lower(),
+            "size_mb": round(size_mb, 4) if size_mb is not None else None,
+        })
+
+        if len(rows) >= max_rows:
+            break
+
+    return pd.DataFrame(rows)
+
+
+inventory_df = inventory_project(PROJECT_ROOT)
+
+print("Files discovered:", len(inventory_df))
+display(inventory_df.head(50))
+
+MODEL_EXTENSIONS = {
+    ".pkl",
+    ".pickle",
+    ".joblib",
+    ".json",
+    ".ubj",
+    ".model",
+}
+
+model_files = []
+
+for path in PROJECT_ROOT.rglob("*"):
+    if not path.is_file():
+        continue
+
+    if path.suffix.lower() not in MODEL_EXTENSIONS:
+        continue
+
+    relative = path.relative_to(PROJECT_ROOT)
+
+    # Avoid Phase-11 generated artifacts
+    if "phase11_xai" in str(relative):
+        continue
+
+    model_files.append(path)
+
+model_inventory = pd.DataFrame({
+    "path": [str(p) for p in model_files],
+    "relative_path": [str(p.relative_to(PROJECT_ROOT)) for p in model_files],
+    "extension": [p.suffix.lower() for p in model_files],
+})
+
+print("Potential model artifacts:", len(model_inventory))
+
+display(model_inventory)
+
+from xgboost import XGBModel
+
+try:
+    from lightgbm import LGBMModel
+except Exception:
+    LGBMModel = ()
+
+def load_serialized_model(path):
+
+    suffix = path.suffix.lower()
+
+    try:
+        if suffix in {".pkl", ".pickle"}:
+            with open(path, "rb") as f:
+                return pickle.load(f)
+
+        if suffix == ".joblib":
+            return joblib.load(path)
+
+        if suffix in {".json", ".ubj", ".model"}:
+            # XGBoost JSON/UBJ
+            model = XGBModel()
+            model.load_model(str(path))
+            return model
+
+    except Exception:
+        return None
+
+    return None
+
+
+model_records = []
+
+for path in model_files:
+
+    model = load_serialized_model(path)
+
+    if model is None:
+        continue
+
+    model_type = type(model).__name__
+
+    has_feature_importance = hasattr(
+        model,
+        "feature_importances_"
+    )
+
+    has_predict = hasattr(model, "predict")
+
+    feature_names = None
+
+    if hasattr(model, "feature_names_in_"):
+        try:
+            feature_names = list(model.feature_names_in_)
+        except Exception:
+            pass
+
+    if feature_names is None and hasattr(model, "get_booster"):
+        try:
+            feature_names = model.get_booster().feature_names
+        except Exception:
+            pass
+
+    model_records.append({
+        "path": str(path),
+        "relative_path": str(path.relative_to(PROJECT_ROOT)),
+        "model_type": model_type,
+        "has_predict": has_predict,
+        "has_feature_importance": has_feature_importance,
+        "feature_count": (
+            len(feature_names)
+            if feature_names is not None
+            else None
+        ),
+        "feature_names": feature_names,
+    })
+
+model_audit_df = pd.DataFrame(model_records)
+
+print("Successfully loaded models:", len(model_audit_df))
+
+if not model_audit_df.empty:
+    display(
+        model_audit_df[
+            [
+                "relative_path",
+                "model_type",
+                "has_predict",
+                "has_feature_importance",
+                "feature_count",
+            ]
+        ]
+    )
+else:
+    print("No serialized models could be loaded.")
+
+audit_path = REPORT_ROOT / "model_inventory.csv"
+
+if not model_audit_df.empty:
+    save_df = model_audit_df.drop(
+        columns=["feature_names"],
+        errors="ignore"
+    )
+else:
+    save_df = pd.DataFrame()
+
+save_df.to_csv(audit_path, index=False)
+
+print("Saved:")
+print(audit_path)
+
+def is_tree_explainable(model):
+
+    model_name = type(model).__name__.lower()
+
+    tree_keywords = [
+        "xgb",
+        "gradientboost",
+        "randomforest",
+        "extratrees",
+        "decisiontree",
+        "histgradient",
+        "lgbm",
+    ]
+
+    if any(keyword in model_name for keyword in tree_keywords):
+        return True
+
+    if hasattr(model, "feature_importances_"):
+        return True
+
+    return False
+
+
+explainable_models = []
+
+for record in model_records:
+
+    path = Path(record["path"])
+    model = load_serialized_model(path)
+
+    if model is None:
+        continue
+
+    if not is_tree_explainable(model):
+        continue
+
+    explainable_models.append({
+        "path": path,
+        "model": model,
+        "model_type": type(model).__name__,
+        "features": record["feature_names"],
+    })
+
+print("Explainable tree models:", len(explainable_models))
+
+for item in explainable_models:
+    print(
+        f"- {item['model_type']} | "
+        f"{item['path'].relative_to(PROJECT_ROOT)}"
+    )
+
+if len(explainable_models) == 0:
+
+    print(
+        """
+PHASE-11 STOP CONDITION
+
+No explainable tree-based ML model was found.
+
+The Phase-11 XAI layer cannot legitimately calculate
+model feature importance or SHAP explanations without
+an existing trained model.
+
+No Phase-09 or Phase-10 artifacts were modified.
+"""
+    )
+
+else:
+    print(
+        f"Phase-11 can proceed with {len(explainable_models)} model(s)."
+    )
+
+data_files = []
+
+for path in PROJECT_ROOT.rglob("*"):
+
+    if not path.is_file():
+        continue
+
+    if "phase11_xai" in str(path):
+        continue
+
+    if path.suffix.lower() in {
+        ".parquet",
+        ".csv",
+    }:
+        data_files.append(path)
+
+print("Candidate data files:", len(data_files))
+
+for path in data_files[:100]:
+    print(path.relative_to(PROJECT_ROOT))
+
+import pyarrow.parquet as pq
+
+
+def get_columns(path):
+
+    try:
+
+        if path.suffix.lower() == ".parquet":
+            return pq.ParquetFile(path).schema.names
+
+        if path.suffix.lower() == ".csv":
+            return pd.read_csv(
+                path,
+                nrows=0
+            ).columns.tolist()
+
+    except Exception:
+        return []
+
+    return []
+
+
+def find_matching_dataset(features):
+
+    if not features:
+        return None, []
+
+    feature_set = set(features)
+
+    best_path = None
+    best_matches = []
+
+    for path in data_files:
+
+        columns = get_columns(path)
+
+        if not columns:
+            continue
+
+        matches = [
+            feature
+            for feature in features
+            if feature in columns
+        ]
+
+        if len(matches) > len(best_matches):
+
+            best_path = path
+            best_matches = matches
+
+    return best_path, best_matches
+
+
+dataset_matches = []
+
+for item in explainable_models:
+
+    path, matches = find_matching_dataset(
+        item["features"]
+    )
+
+    dataset_matches.append({
+        "model_path": str(item["path"]),
+        "model_type": item["model_type"],
+        "dataset_path": str(path) if path else None,
+        "matched_features": len(matches),
+        "total_features": (
+            len(item["features"])
+            if item["features"]
+            else None
+        ),
+    })
+
+dataset_match_df = pd.DataFrame(dataset_matches)
+
+display(dataset_match_df)
+
+if dataset_match_df.empty:
+
+    raise RuntimeError(
+        "No explainable models are available for Phase-11."
+    )
+
+dataset_match_df["match_ratio"] = (
+    dataset_match_df["matched_features"]
+    /
+    dataset_match_df["total_features"].replace(0, np.nan)
+)
+
+dataset_match_df = dataset_match_df.sort_values(
+    [
+        "match_ratio",
+        "matched_features",
+    ],
+    ascending=False,
+)
+
+display(dataset_match_df)
+
+PRIMARY_MODEL_PATH = Path(
+    dataset_match_df.iloc[0]["model_path"]
+)
+
+PRIMARY_DATA_PATH = Path(
+    dataset_match_df.iloc[0]["dataset_path"]
+)
+
+PRIMARY_MODEL = load_serialized_model(
+    PRIMARY_MODEL_PATH
+)
+
+print("PRIMARY MODEL")
+print(PRIMARY_MODEL_PATH.relative_to(PROJECT_ROOT))
+
+print("\nMODEL TYPE")
+print(type(PRIMARY_MODEL).__name__)
+
+print("\nDATASET")
+print(PRIMARY_DATA_PATH.relative_to(PROJECT_ROOT))
+
+def get_model_features(model):
+
+    if hasattr(model, "feature_names_in_"):
+        try:
+            return list(model.feature_names_in_)
+        except Exception:
+            pass
+
+    if hasattr(model, "get_booster"):
+        try:
+            names = model.get_booster().feature_names
+            if names:
+                return list(names)
+        except Exception:
+            pass
+
+    return None
+
+
+MODEL_FEATURES = get_model_features(
+    PRIMARY_MODEL
+)
+
+if MODEL_FEATURES is None:
+
+    raise RuntimeError(
+        "Could not determine feature names from the model."
+    )
+
+print("Number of model features:", len(MODEL_FEATURES))
+print(MODEL_FEATURES)
+
+# ============================================================
+# PHASE-11 / CELL 17
+# Identify dataset containing ALL model features
+# ============================================================
+
+FORECASTING_CANDIDATES = [
+    PROJECT_ROOT / "processed" / "forecasting" / "final_forecast_dataset.parquet",
+    PROJECT_ROOT / "processed" / "forecasting" / "forecasting_train.parquet",
+    PROJECT_ROOT / "processed" / "forecasting" / "forecasting_validation.parquet",
+    PROJECT_ROOT / "processed" / "forecasting" / "forecasting_test.parquet",
+    PROJECT_ROOT / "processed" / "forecasting" / "xgboost_test_forecast.parquet",
+    PROJECT_ROOT / "processed" / "forecasting" / "forecast_dataset.parquet",
+    PROJECT_ROOT / "processed" / "forecasting" / "building_timeseries.parquet",
+    PROJECT_ROOT / "processed" / "forecasting" / "campus_timeseries.parquet",
+]
+
+MODEL_FEATURES = [
+    str(feature)
+    for feature in MODEL_FEATURES
+]
+
+print("Required model features:")
+for feature in MODEL_FEATURES:
+    print("  ", feature)
+
+print("\nChecking forecasting datasets...\n")
+
+dataset_check = []
+
+for path in FORECASTING_CANDIDATES:
+
+    if not path.exists():
+        continue
+
+    try:
+        columns = get_columns(path)
+
+        matched = [
+            feature
+            for feature in MODEL_FEATURES
+            if feature in columns
+        ]
+
+        missing = [
+            feature
+            for feature in MODEL_FEATURES
+            if feature not in columns
+        ]
+
+        dataset_check.append({
+            "dataset": str(
+                path.relative_to(PROJECT_ROOT)
+            ),
+            "rows_available": (
+                pq.ParquetFile(path).metadata.num_rows
+                if path.suffix == ".parquet"
+                else None
+            ),
+            "total_columns": len(columns),
+            "matched_features": len(matched),
+            "missing_features": len(missing),
+            "complete": len(missing) == 0,
+        })
+
+    except Exception as e:
+
+        dataset_check.append({
+            "dataset": str(
+                path.relative_to(PROJECT_ROOT)
+            ),
+            "rows_available": None,
+            "total_columns": None,
+            "matched_features": 0,
+            "missing_features": len(MODEL_FEATURES),
+            "complete": False,
+            "error": str(e),
+        })
+
+dataset_check_df = pd.DataFrame(dataset_check)
+
+display(dataset_check_df)
+
+# ============================================================
+# DIAGNOSTIC — FIND ANY POSSIBLE SAVED FORECASTING MODEL
+# ============================================================
+
+from pathlib import Path
+
+PROJECT_ROOT = Path(
+    "/content/gdrive/MyDrive/GitHub_Project_01"
+)
+
+all_files = [
+    p for p in PROJECT_ROOT.rglob("*")
+    if p.is_file()
+]
+
+print("=" * 70)
+print("TOTAL PROJECT FILES")
+print("=" * 70)
+print(f"{len(all_files):,}")
+
+
+# ------------------------------------------------------------
+# Search model-like filenames
+# ------------------------------------------------------------
+
+keywords = [
+    "xgb",
+    "xgboost",
+    "model",
+    "forecast",
+    "regressor",
+    "booster",
+]
+
+matches = []
+
+for path in all_files:
+
+    name = path.name.lower()
+
+    if any(
+        keyword in name
+        for keyword in keywords
+    ):
+
+        matches.append(path)
+
+
+print("\n" + "=" * 70)
+print("MODEL / FORECAST RELATED FILES")
+print("=" * 70)
+
+for path in matches:
+
+    print(
+        path.relative_to(
+            PROJECT_ROOT
+        )
+    )
+
+
+# ------------------------------------------------------------
+# Search actual serialized model extensions
+# ------------------------------------------------------------
+
+model_extensions = {
+    ".pkl",
+    ".pickle",
+    ".joblib",
+    ".sav",
+    ".model",
+    ".bin",
+    ".json",
+}
+
+serialized = [
+    p for p in all_files
+    if p.suffix.lower()
+    in model_extensions
+]
+
+
+print("\n" + "=" * 70)
+print("SERIALIZED MODEL-LIKE FILES")
+print("=" * 70)
+
+if serialized:
+
+    for path in serialized:
+
+        print(
+            path.relative_to(
+                PROJECT_ROOT
+            )
+        )
+
+else:
+
+    print(
+        "NO .pkl / .joblib / .pickle / .sav / "
+        ".model / .bin / .json model artifacts found."
+    )
+
+# ============================================================
+# PHASE-11 / CELL 18
+# INITIALIZATION + PROJECT VALIDATION
+# ============================================================
+
+from pathlib import Path
+import os
+import json
+import warnings
+
+warnings.filterwarnings("ignore")
+
+PROJECT_ROOT = Path(
+    "/content/gdrive/MyDrive/GitHub_Project_01"
+)
+
+if not PROJECT_ROOT.exists():
+
+    raise FileNotFoundError(
+        f"Project root not found:\n{PROJECT_ROOT}"
+    )
+
+print("=" * 70)
+print("PHASE-11 — XAI & MODEL INTERPRETABILITY")
+print("=" * 70)
+
+print("Project root:")
+print(PROJECT_ROOT)
+
+
+# ------------------------------------------------------------
+# Phase-11 directories
+# ------------------------------------------------------------
+
+PHASE11_ROOT = (
+    PROJECT_ROOT
+    / "processed"
+    / "phase11_xai"
+)
+
+MODEL_ROOT = (
+    PROJECT_ROOT
+    / "models"
+    / "forecasting"
+)
+
+REPORT_ROOT = (
+    PROJECT_ROOT
+    / "reports"
+    / "phase11_xai"
+)
+
+for path in [
+    PHASE11_ROOT,
+    MODEL_ROOT,
+    REPORT_ROOT,
+    REPORT_ROOT / "feature_importance",
+    REPORT_ROOT / "shap",
+    REPORT_ROOT / "plots",
+    REPORT_ROOT / "local",
+]:
+
+    path.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+
+
+# ------------------------------------------------------------
+# Authoritative 13-feature contract
+# ------------------------------------------------------------
+
+MODEL_FEATURES = [
+    "year",
+    "month",
+    "day",
+    "weekday",
+    "week_of_year",
+    "is_weekend",
+    "lag_1",
+    "lag_7",
+    "lag_14",
+    "lag_30",
+    "rolling_7",
+    "rolling_30",
+    "rolling_std_30",
+]
+
+print("\nExpected model features:")
+
+for i, feature in enumerate(
+    MODEL_FEATURES,
+    1
+):
+
+    print(
+        f"{i:02d}. {feature}"
+    )
+
+print(
+    "\n✓ Phase-11 environment initialized."
+)
+
+# ============================================================
+# PHASE-11 / CELL 19
+# AUTHORITATIVE PROJECT INVENTORY
+# ============================================================
+
+from pathlib import Path
+
+PROJECT_ROOT = Path(
+    "/content/gdrive/MyDrive/GitHub_Project_01"
+)
+
+if not PROJECT_ROOT.exists():
+
+    raise FileNotFoundError(
+        f"Project root not found:\n{PROJECT_ROOT}"
+    )
+
+
+# ------------------------------------------------------------
+# Collect everything
+# ------------------------------------------------------------
+
+all_files = [
+    p
+    for p in PROJECT_ROOT.rglob("*")
+    if p.is_file()
+]
+
+
+all_dirs = [
+    p
+    for p in PROJECT_ROOT.rglob("*")
+    if p.is_dir()
+]
+
+
+print("=" * 75)
+print("PHASE-11 — AUTHORITATIVE PROJECT INVENTORY")
+print("=" * 75)
+
+print(
+    "Project root:",
+    PROJECT_ROOT
+)
+
+print(
+    "Directories:",
+    f"{len(all_dirs):,}"
+)
+
+print(
+    "Files:",
+    f"{len(all_files):,}"
+)
+
+
+# ------------------------------------------------------------
+# File type summary
+# ------------------------------------------------------------
+
+from collections import Counter
+
+extension_counts = Counter(
+    p.suffix.lower()
+    if p.suffix
+    else "[no extension]"
+    for p in all_files
+)
+
+
+print("\n" + "=" * 75)
+print("FILE TYPES")
+print("=" * 75)
+
+for extension, count in sorted(
+    extension_counts.items()
+):
+
+    print(
+        f"{extension:<20} {count:>8,}"
+    )
+
+
+# ------------------------------------------------------------
+# Forecasting-related files
+# ------------------------------------------------------------
+
+forecast_keywords = [
+    "forecast",
+    "xgb",
+    "xgboost",
+    "prediction",
+    "timeseries",
+    "time_series",
+    "rolling",
+    "arima",
+    "prophet",
+]
+
+
+forecast_files = []
+
+for path in all_files:
+
+    name = path.name.lower()
+
+    if any(
+        keyword in name
+        for keyword in forecast_keywords
+    ):
+
+        forecast_files.append(
+            path
+        )
+
+
+print("\n" + "=" * 75)
+print("FORECASTING / MODEL RELATED FILES")
+print("=" * 75)
+
+if forecast_files:
+
+    for path in sorted(
+        forecast_files
+    ):
+
+        print(
+            path.relative_to(
+                PROJECT_ROOT
+            )
+        )
+
+else:
+
+    print(
+        "No forecasting-related filenames found."
+    )
+
+
+# ------------------------------------------------------------
+# Serialized model candidates
+# ------------------------------------------------------------
+
+model_extensions = {
+    ".pkl",
+    ".pickle",
+    ".joblib",
+    ".sav",
+    ".model",
+    ".bin",
+    ".json",
+}
+
+
+model_files = [
+    p
+    for p in all_files
+    if p.suffix.lower()
+    in model_extensions
+]
+
+
+print("\n" + "=" * 75)
+print("SERIALIZED MODEL CANDIDATES")
+print("=" * 75)
+
+if model_files:
+
+    for path in sorted(
+        model_files
+    ):
+
+        print(
+            path.relative_to(
+                PROJECT_ROOT
+            )
+        )
+
+else:
+
+    print(
+        "No serialized model files found."
+    )
+
+
+# ------------------------------------------------------------
+# Parquet candidates
+# ------------------------------------------------------------
+
+parquet_files = [
+    p
+    for p in all_files
+    if p.suffix.lower()
+    == ".parquet"
+]
+
+
+print("\n" + "=" * 75)
+print("PARQUET DATASETS")
+print("=" * 75)
+
+print(
+    f"Total parquet files: "
+    f"{len(parquet_files):,}"
+)
+
+for path in sorted(
+    parquet_files
+):
+
+    print(
+        path.relative_to(
+            PROJECT_ROOT
+        )
+    )
+
+# ============================================================
+# PHASE-11 / CELL 20
+# GOOGLE DRIVE FILESYSTEM CHECK
+# ============================================================
+
+from pathlib import Path
+import os
+
+MOUNTS = [
+    Path("/content/gdrive/MyDrive"),
+    Path("/content/drive/MyDrive"),
+]
+
+print("=" * 75)
+print("GOOGLE DRIVE FILESYSTEM CHECK")
+print("=" * 75)
+
+for root in MOUNTS:
+
+    print("\n" + "-" * 75)
+    print("ROOT:", root)
+    print("-" * 75)
+
+    print("Exists:", root.exists())
+    print("Directory:", root.is_dir())
+
+    if not root.exists():
+        continue
+
+    try:
+
+        children = list(root.iterdir())
+
+        print(
+            "Immediate children:",
+            len(children)
+        )
+
+        for item in children[:30]:
+
+            print(
+                "DIR  " if item.is_dir()
+                else "FILE ",
+                item.name
+            )
+
+    except Exception as e:
+
+        print(
+            "ERROR:",
+            repr(e)
+        )
+
+# ============================================================
+# PHASE-11 / CELL 21
+# SEARCH GOOGLE DRIVE FOR KNOWN PROJECT ARTIFACTS
+# ============================================================
+
+from pathlib import Path
+
+SEARCH_ROOTS = [
+    Path("/content/gdrive/MyDrive"),
+    Path("/content/drive/MyDrive"),
+]
+
+KNOWN_NAMES = [
+
+    "sustainability_master_dataset.parquet",
+
+    "carbon_cost_master.parquet",
+
+    "carbon_cost_building_intelligence.parquet",
+
+    "sustainability_knowledge.json",
+
+    "xgboost_forecast_model.pkl",
+
+    "forecasting_train.parquet",
+
+    "forecasting_test.parquet",
+
+    "electricity_daily.parquet",
+
+    "electricity.parquet",
+
+]
+
+
+print("=" * 75)
+print("SEARCHING FOR KNOWN PROJECT ARTIFACTS")
+print("=" * 75)
+
+
+found = []
+
+
+for root in SEARCH_ROOTS:
+
+    if not root.exists():
+        continue
+
+    print(
+        f"\nSearching: {root}"
+    )
+
+    for target in KNOWN_NAMES:
+
+        matches = list(
+            root.rglob(target)
+        )
+
+        for match in matches:
+
+            if match not in found:
+
+                found.append(match)
+
+
+print("\n" + "=" * 75)
+print("RESULTS")
+print("=" * 75)
+
+
+if found:
+
+    for path in sorted(found):
+
+        print(
+            path
+        )
+
+else:
+
+    print(
+        "NO KNOWN PROJECT ARTIFACTS FOUND."
+    )
+
+
+print(
+    f"\nTotal matching artifacts: "
+    f"{len(found)}"
+)
+
+# ============================================================
+# PHASE-11 / CELL 22
+# LOCATE NON-EMPTY GITHUB_PROJECT_01 COPIES
+# ============================================================
+
+from pathlib import Path
+
+SEARCH_ROOTS = [
+    Path("/content/gdrive/MyDrive"),
+    Path("/content/drive/MyDrive"),
+]
+
+PROJECT_NAME = "GitHub_Project_01"
+
+candidates = []
+
+
+for root in SEARCH_ROOTS:
+
+    if not root.exists():
+        continue
+
+    for directory in root.rglob(PROJECT_NAME):
+
+        if not directory.is_dir():
+            continue
+
+        try:
+
+            file_count = sum(
+                1
+                for p in directory.rglob("*")
+                if p.is_file()
+            )
+
+        except Exception:
+
+            file_count = -1
+
+
+        candidates.append(
+            (
+                directory,
+                file_count
+            )
+        )
+
+
+print("=" * 75)
+print("PROJECT COPIES")
+print("=" * 75)
+
+
+if candidates:
+
+    for directory, count in candidates:
+
+        print(
+            f"\n{directory}"
+        )
+
+        print(
+            "Files:",
+            count
+        )
+
+else:
+
+    print(
+        "No GitHub_Project_01 directory found."
+    )
+
+# ============================================================
+# PHASE-11 / CELL 23
+# DRIVE MOUNT HEALTH CHECK
+# ============================================================
+
+import os
+import subprocess
+
+print("=" * 75)
+print("DRIVE MOUNT HEALTH CHECK")
+print("=" * 75)
+
+
+print("\n/content mounts:")
+
+result = subprocess.run(
+    [
+        "bash",
+        "-c",
+        "mount | grep -E 'drive|gdrive' || true"
+    ],
+    capture_output=True,
+    text=True
+)
+
+print(
+    result.stdout
+)
+
+
+print("\nDrive root permissions:")
+
+for path in [
+    "/content/gdrive",
+    "/content/gdrive/MyDrive",
+    "/content/drive",
+    "/content/drive/MyDrive",
+]:
+
+    print(
+        path,
+        "->",
+        os.access(path, os.R_OK)
+    )
+
+# ============================================================
+# PHASE-11 / CELL 19
+# AUTHORITATIVE PROJECT CONFIGURATION
+# ============================================================
+
+from pathlib import Path
+
+PROJECT_ROOT = Path(
+    "/content/drive/MyDrive/GitHub_Project_01"
+)
+
+MODEL_PATH = (
+    PROJECT_ROOT
+    / "models"
+    / "forecasting"
+    / "xgboost_forecast_model.pkl"
+)
+
+TRAIN_PATH = (
+    PROJECT_ROOT
+    / "processed"
+    / "forecasting"
+    / "forecasting_train.parquet"
+)
+
+TEST_PATH = (
+    PROJECT_ROOT
+    / "processed"
+    / "forecasting"
+    / "forecasting_test.parquet"
+)
+
+XAI_ROOT = (
+    PROJECT_ROOT
+    / "reports"
+    / "phase11_xai"
+)
+
+XAI_ROOT.mkdir(
+    parents=True,
+    exist_ok=True
+)
+
+print("=" * 70)
+print("PHASE-11 CONFIGURATION")
+print("=" * 70)
+
+print("Project:")
+print(PROJECT_ROOT)
+
+print("\nModel:")
+print(MODEL_PATH)
+
+print("\nTraining dataset:")
+print(TRAIN_PATH)
+
+print("\nTest dataset:")
+print(TEST_PATH)
+
+print("\nXAI output:")
+print(XAI_ROOT)
+
+# ============================================================
+# PHASE-11 / CELL 20
+# REQUIRED ARTIFACT VALIDATION
+# ============================================================
+
+required = {
+    "Project root": PROJECT_ROOT,
+    "XGBoost model": MODEL_PATH,
+    "Forecasting train dataset": TRAIN_PATH,
+    "Forecasting test dataset": TEST_PATH,
+}
+
+print("=" * 70)
+print("REQUIRED ARTIFACT VALIDATION")
+print("=" * 70)
+
+for name, path in required.items():
+
+    status = "PASS" if path.exists() else "FAIL"
+
+    print(
+        f"{name:<35} {status}"
+    )
+
+    if not path.exists():
+
+        raise FileNotFoundError(
+            f"Required artifact missing:\n{path}"
+        )
+
+print("\nAll required Phase-11 artifacts are available.")
+
+# ============================================================
+# PHASE-11 / CELL 21
+# LOAD MODEL + FORECASTING DATA
+# ============================================================
+
+import joblib
+import pandas as pd
+
+PRIMARY_MODEL = joblib.load(
+    MODEL_PATH
+)
+
+TRAIN_DF = pd.read_parquet(
+    TRAIN_PATH
+)
+
+TEST_DF = pd.read_parquet(
+    TEST_PATH
+)
+
+print("=" * 70)
+print("MODEL + DATA LOADED")
+print("=" * 70)
+
+print(
+    "Model type:",
+    type(PRIMARY_MODEL).__name__
+)
+
+print(
+    "Training shape:",
+    TRAIN_DF.shape
+)
+
+print(
+    "Test shape:",
+    TEST_DF.shape
+)
+
+print("\nTraining columns:")
+print(TRAIN_DF.columns.tolist())
+
+print("\nTest columns:")
+print(TEST_DF.columns.tolist())
+
+# ============================================================
+# PHASE-11 / CELL 22
+# AUTHORITATIVE MODEL FEATURE RECOVERY
+# ============================================================
+
+import numpy as np
+
+MODEL_FEATURES = None
+
+
+# ------------------------------------------------------------
+# XGBoost feature names
+# ------------------------------------------------------------
+
+if hasattr(PRIMARY_MODEL, "feature_names_in_"):
+
+    MODEL_FEATURES = list(
+        PRIMARY_MODEL.feature_names_in_
+    )
+
+
+elif hasattr(PRIMARY_MODEL, "get_booster"):
+
+    booster = PRIMARY_MODEL.get_booster()
+
+    if booster.feature_names:
+
+        MODEL_FEATURES = list(
+            booster.feature_names
+        )
+
+
+if MODEL_FEATURES is None:
+
+    MODEL_FEATURES = [
+        "year",
+        "month",
+        "day",
+        "weekday",
+        "week_of_year",
+        "is_weekend",
+        "lag_1",
+        "lag_7",
+        "lag_14",
+        "lag_30",
+        "rolling_7",
+        "rolling_30",
+        "rolling_std_30",
+    ]
+
+
+print("=" * 70)
+print("AUTHORITATIVE MODEL FEATURES")
+print("=" * 70)
+
+print(
+    "Number of model features:",
+    len(MODEL_FEATURES)
+)
+
+for i, feature in enumerate(
+    MODEL_FEATURES,
+    start=1
+):
+
+    print(
+        f"{i:02d}. {feature}"
+    )
+
+# ============================================================
+# PHASE-11 / CELL 23
+# RECONSTRUCT MODEL FEATURES FROM DATETIME + TARGET
+# ============================================================
+
+import pandas as pd
+import numpy as np
+
+# ------------------------------------------------------------
+# Required source columns
+# ------------------------------------------------------------
+
+SOURCE_COLUMNS = [
+    "datetime",
+    "target_energy",
+]
+
+for column in SOURCE_COLUMNS:
+
+    if column not in TRAIN_DF.columns:
+        raise RuntimeError(
+            f"Training dataset missing required column: {column}"
+        )
+
+    if column not in TEST_DF.columns:
+        raise RuntimeError(
+            f"Test dataset missing required column: {column}"
+        )
+
+
+# ------------------------------------------------------------
+# Preserve original split sizes
+# ------------------------------------------------------------
+
+TRAIN_ROWS_ORIGINAL = len(TRAIN_DF)
+TEST_ROWS_ORIGINAL = len(TEST_DF)
+
+
+# ------------------------------------------------------------
+# Combine chronological data
+# ------------------------------------------------------------
+
+ALL_FORECAST_DATA = pd.concat(
+    [
+        TRAIN_DF[SOURCE_COLUMNS].copy(),
+        TEST_DF[SOURCE_COLUMNS].copy(),
+    ],
+    ignore_index=True
+)
+
+
+ALL_FORECAST_DATA["datetime"] = pd.to_datetime(
+    ALL_FORECAST_DATA["datetime"],
+    errors="coerce"
+)
+
+
+ALL_FORECAST_DATA["target_energy"] = pd.to_numeric(
+    ALL_FORECAST_DATA["target_energy"],
+    errors="coerce"
+)
+
+
+# ------------------------------------------------------------
+# Validate source data
+# ------------------------------------------------------------
+
+if ALL_FORECAST_DATA["datetime"].isna().any():
+
+    raise RuntimeError(
+        "Invalid datetime values detected."
+    )
+
+
+if ALL_FORECAST_DATA["target_energy"].isna().any():
+
+    raise RuntimeError(
+        "Invalid target_energy values detected."
+    )
+
+
+# ------------------------------------------------------------
+# Sort chronologically
+# ------------------------------------------------------------
+
+ALL_FORECAST_DATA = (
+    ALL_FORECAST_DATA
+    .sort_values("datetime")
+    .reset_index(drop=True)
+)
+
+
+# ------------------------------------------------------------
+# Duplicate timestamp validation
+# ------------------------------------------------------------
+
+duplicate_count = (
+    ALL_FORECAST_DATA["datetime"]
+    .duplicated()
+    .sum()
+)
+
+
+if duplicate_count > 0:
+
+    raise RuntimeError(
+        f"Duplicate datetime values detected: "
+        f"{duplicate_count}"
+    )
+
+
+# ------------------------------------------------------------
+# Date features
+# ------------------------------------------------------------
+
+ALL_FORECAST_DATA["year"] = (
+    ALL_FORECAST_DATA["datetime"].dt.year
+)
+
+ALL_FORECAST_DATA["month"] = (
+    ALL_FORECAST_DATA["datetime"].dt.month
+)
+
+ALL_FORECAST_DATA["day"] = (
+    ALL_FORECAST_DATA["datetime"].dt.day
+)
+
+ALL_FORECAST_DATA["weekday"] = (
+    ALL_FORECAST_DATA["datetime"].dt.weekday
+)
+
+ALL_FORECAST_DATA["week_of_year"] = (
+    ALL_FORECAST_DATA["datetime"]
+    .dt.isocalendar()
+    .week
+    .astype(int)
+)
+
+ALL_FORECAST_DATA["is_weekend"] = (
+    ALL_FORECAST_DATA["weekday"] >= 5
+).astype(int)
+
+
+# ------------------------------------------------------------
+# Historical lag features
+# ------------------------------------------------------------
+
+ALL_FORECAST_DATA["lag_1"] = (
+    ALL_FORECAST_DATA["target_energy"]
+    .shift(1)
+)
+
+ALL_FORECAST_DATA["lag_7"] = (
+    ALL_FORECAST_DATA["target_energy"]
+    .shift(7)
+)
+
+ALL_FORECAST_DATA["lag_14"] = (
+    ALL_FORECAST_DATA["target_energy"]
+    .shift(14)
+)
+
+ALL_FORECAST_DATA["lag_30"] = (
+    ALL_FORECAST_DATA["target_energy"]
+    .shift(30)
+)
+
+
+# ------------------------------------------------------------
+# Past-only rolling features
+#
+# Shift first so the current target is never used to
+# construct its own prediction features.
+# ------------------------------------------------------------
+
+HISTORICAL_TARGET = (
+    ALL_FORECAST_DATA["target_energy"]
+    .shift(1)
+)
+
+
+ALL_FORECAST_DATA["rolling_7"] = (
+    HISTORICAL_TARGET
+    .rolling(
+        window=7,
+        min_periods=7
+    )
+    .mean()
+)
+
+
+ALL_FORECAST_DATA["rolling_30"] = (
+    HISTORICAL_TARGET
+    .rolling(
+        window=30,
+        min_periods=30
+    )
+    .mean()
+)
+
+
+ALL_FORECAST_DATA["rolling_std_30"] = (
+    HISTORICAL_TARGET
+    .rolling(
+        window=30,
+        min_periods=30
+    )
+    .std()
+)
+
+
+# ------------------------------------------------------------
+# Confirm all 13 model features exist
+# ------------------------------------------------------------
+
+missing_features = [
+    feature
+    for feature in MODEL_FEATURES
+    if feature not in ALL_FORECAST_DATA.columns
+]
+
+
+if missing_features:
+
+    raise RuntimeError(
+        "Feature reconstruction failed.\n"
+        + "\n".join(missing_features)
+    )
+
+
+print("=" * 70)
+print("FEATURE RECONSTRUCTION COMPLETE")
+print("=" * 70)
+
+print(
+    "Combined rows:",
+    len(ALL_FORECAST_DATA)
+)
+
+print(
+    "Training rows:",
+    TRAIN_ROWS_ORIGINAL
+)
+
+print(
+    "Test rows:",
+    TEST_ROWS_ORIGINAL
+)
+
+print(
+    "\nReconstructed features:"
+)
+
+for feature in MODEL_FEATURES:
+
+    print(
+        f"PASS  {feature}"
+    )
+
+# ============================================================
+# PHASE-11 / CELL 24
+# TIME SERIES STRUCTURE VALIDATION
+# ============================================================
+
+datetime_values = (
+    ALL_FORECAST_DATA["datetime"]
+)
+
+time_differences = (
+    datetime_values
+    .diff()
+    .dropna()
+)
+
+
+print("=" * 70)
+print("TIME SERIES VALIDATION")
+print("=" * 70)
+
+print(
+    "First timestamp:",
+    datetime_values.iloc[0]
+)
+
+print(
+    "Last timestamp:",
+    datetime_values.iloc[-1]
+)
+
+print(
+    "Rows:",
+    len(ALL_FORECAST_DATA)
+)
+
+print(
+    "Duplicate timestamps:",
+    int(duplicate_count)
+)
+
+print(
+    "\nMost common time intervals:"
+)
+
+print(
+    time_differences
+    .value_counts()
+    .head(10)
+)
+
+
+# ------------------------------------------------------------
+# Train/test chronological boundary
+# ------------------------------------------------------------
+
+TRAIN_END = (
+    pd.to_datetime(
+        TRAIN_DF["datetime"]
+    ).max()
+)
+
+TEST_START = (
+    pd.to_datetime(
+        TEST_DF["datetime"]
+    ).min()
+)
+
+
+print(
+    "\nOriginal training end:",
+    TRAIN_END
+)
+
+print(
+    "Original test start:",
+    TEST_START
+)
+
+
+if TRAIN_END >= TEST_START:
+
+    raise RuntimeError(
+        "Training and test periods overlap."
+    )
+
+
+print(
+    "\nChronological split validation: PASS"
+)
+
+# ============================================================
+# PHASE-11 / CELL 25
+# RESTORE TRAIN / TEST FEATURE MATRICES
+# ============================================================
+
+TRAIN_END_INDEX = TRAIN_ROWS_ORIGINAL
+TEST_START_INDEX = TRAIN_ROWS_ORIGINAL
+
+
+# ------------------------------------------------------------
+# Because the combined data was sorted chronologically,
+# recover rows using timestamp membership rather than
+# blindly relying on original row order.
+# ------------------------------------------------------------
+
+TRAIN_TIMESTAMPS = set(
+    pd.to_datetime(
+        TRAIN_DF["datetime"]
+    )
+)
+
+TEST_TIMESTAMPS = set(
+    pd.to_datetime(
+        TEST_DF["datetime"]
+    )
+)
+
+
+TRAIN_FEATURE_DF = (
+    ALL_FORECAST_DATA[
+        ALL_FORECAST_DATA["datetime"]
+        .isin(TRAIN_TIMESTAMPS)
+    ]
+    .copy()
+    .sort_values("datetime")
+    .reset_index(drop=True)
+)
+
+
+TEST_FEATURE_DF = (
+    ALL_FORECAST_DATA[
+        ALL_FORECAST_DATA["datetime"]
+        .isin(TEST_TIMESTAMPS)
+    ]
+    .copy()
+    .sort_values("datetime")
+    .reset_index(drop=True)
+)
+
+
+# ------------------------------------------------------------
+# Preserve target
+# ------------------------------------------------------------
+
+y_train = (
+    TRAIN_FEATURE_DF[
+        "target_energy"
+    ]
+    .copy()
+    .reset_index(drop=True)
+)
+
+
+y_test = (
+    TEST_FEATURE_DF[
+        "target_energy"
+    ]
+    .copy()
+    .reset_index(drop=True)
+)
+
+
+# ------------------------------------------------------------
+# Feature matrices
+# ------------------------------------------------------------
+
+X_train = (
+    TRAIN_FEATURE_DF[
+        MODEL_FEATURES
+    ]
+    .copy()
+    .reset_index(drop=True)
+)
+
+
+X_test = (
+    TEST_FEATURE_DF[
+        MODEL_FEATURES
+    ]
+    .copy()
+    .reset_index(drop=True)
+)
+
+
+print("=" * 70)
+print("RECONSTRUCTED FEATURE MATRICES")
+print("=" * 70)
+
+print(
+    "X_train:",
+    X_train.shape
+)
+
+print(
+    "y_train:",
+    y_train.shape
+)
+
+print(
+    "X_test:",
+    X_test.shape
+)
+
+print(
+    "y_test:",
+    y_test.shape
+)
+
+
+if len(X_train) != TRAIN_ROWS_ORIGINAL:
+
+    raise RuntimeError(
+        "Training row preservation failed."
+    )
+
+
+if len(X_test) != TEST_ROWS_ORIGINAL:
+
+    raise RuntimeError(
+        "Test row preservation failed."
+    )
+
+
+print(
+    "\nRow preservation: PASS"
+)
+
+# ============================================================
+# PHASE-11 / CELL 26
+# HISTORICAL FEATURE WARM-UP VALIDATION
+# ============================================================
+
+feature_null_counts = (
+    ALL_FORECAST_DATA[
+        MODEL_FEATURES
+    ]
+    .isna()
+    .sum()
+)
+
+
+print("=" * 70)
+print("FEATURE WARM-UP VALIDATION")
+print("=" * 70)
+
+print(
+    feature_null_counts
+)
+
+
+# ------------------------------------------------------------
+# Determine complete rows
+# ------------------------------------------------------------
+
+train_complete_mask = (
+    X_train
+    .notna()
+    .all(axis=1)
+)
+
+test_complete_mask = (
+    X_test
+    .notna()
+    .all(axis=1)
+)
+
+
+print(
+    "\nComplete training rows:",
+    int(train_complete_mask.sum())
+)
+
+print(
+    "Incomplete training rows:",
+    int((~train_complete_mask).sum())
+)
+
+print(
+    "Complete test rows:",
+    int(test_complete_mask.sum())
+)
+
+print(
+    "Incomplete test rows:",
+    int((~test_complete_mask).sum())
+)
+
+
+# ------------------------------------------------------------
+# Test set must have complete features.
+# ------------------------------------------------------------
+
+if not test_complete_mask.all():
+
+    raise RuntimeError(
+        "Test dataset contains incomplete lag/rolling "
+        "features. The reconstructed time series is not "
+        "sufficient for XAI."
+    )
+
+
+# ------------------------------------------------------------
+# Remove warm-up rows only from training data.
+# ------------------------------------------------------------
+
+X_train = (
+    X_train.loc[
+        train_complete_mask
+    ]
+    .reset_index(drop=True)
+)
+
+y_train = (
+    y_train.loc[
+        train_complete_mask
+    ]
+    .reset_index(drop=True)
+)
+
+
+print(
+    "\nTraining warm-up rows removed."
+)
+
+print(
+    "Final X_train:",
+    X_train.shape
+)
+
+print(
+    "Final X_test:",
+    X_test.shape
+)
+
+# ============================================================
+# PHASE-11 / CELL 27
+# MODEL / FEATURE COMPATIBILITY VALIDATION
+# ============================================================
+
+# ------------------------------------------------------------
+# Ensure exact feature order
+# ------------------------------------------------------------
+
+X_test = X_test[
+    MODEL_FEATURES
+].copy()
+
+X_train = X_train[
+    MODEL_FEATURES
+].copy()
+
+
+# ------------------------------------------------------------
+# Prediction
+# ------------------------------------------------------------
+
+test_predictions = PRIMARY_MODEL.predict(
+    X_test
+)
+
+
+print("=" * 70)
+print("MODEL / FEATURE COMPATIBILITY")
+print("=" * 70)
+
+print(
+    "Model:",
+    type(PRIMARY_MODEL).__name__
+)
+
+print(
+    "Feature count:",
+    X_test.shape[1]
+)
+
+print(
+    "Prediction count:",
+    len(test_predictions)
+)
+
+print(
+    "Target count:",
+    len(y_test)
+)
+
+
+if X_test.shape[1] != 13:
+
+    raise RuntimeError(
+        "Expected exactly 13 model features."
+    )
+
+
+if len(test_predictions) != len(y_test):
+
+    raise RuntimeError(
+        "Prediction count does not match test target count."
+    )
+
+
+if not np.isfinite(
+    test_predictions
+).all():
+
+    raise RuntimeError(
+        "Model produced non-finite predictions."
+    )
+
+
+print(
+    "\nModel compatibility: PASS"
+)
+
+# ============================================================
+# PHASE-11 / CELL 28
+# EXISTING FORECAST ARTIFACT CROSS-CHECK
+# ============================================================
+
+XGBOOST_FORECAST_PATH = (
+    PROJECT_ROOT
+    / "processed"
+    / "forecasting"
+    / "xgboost_test_forecast.parquet"
+)
+
+
+print("=" * 70)
+print("EXISTING FORECAST ARTIFACT CHECK")
+print("=" * 70)
+
+print(
+    "Path:",
+    XGBOOST_FORECAST_PATH
+)
+
+
+if XGBOOST_FORECAST_PATH.exists():
+
+    EXISTING_FORECAST = pd.read_parquet(
+        XGBOOST_FORECAST_PATH
+    )
+
+    print(
+        "\nExisting forecast shape:",
+        EXISTING_FORECAST.shape
+    )
+
+    print(
+        "\nColumns:"
+    )
+
+    print(
+        EXISTING_FORECAST.columns.tolist()
+    )
+
+else:
+
+    EXISTING_FORECAST = None
+
+    print(
+        "\nExisting xgboost_test_forecast.parquet "
+        "was not found."
+    )
+
+# ============================================================
+# PHASE-11 / CELL 29
+# FORECAST CROSS-CHECK
+# ============================================================
+
+if EXISTING_FORECAST is not None:
+
+    numeric_columns = [
+        column
+        for column in EXISTING_FORECAST.columns
+        if pd.api.types.is_numeric_dtype(
+            EXISTING_FORECAST[column]
+        )
+    ]
+
+    print("=" * 70)
+    print("NUMERIC FORECAST COLUMNS")
+    print("=" * 70)
+
+    print(
+        numeric_columns
+    )
+
+
+    # --------------------------------------------------------
+    # Try to identify prediction column
+    # --------------------------------------------------------
+
+    prediction_candidates = [
+        "prediction",
+        "predicted_energy",
+        "predicted_target",
+        "forecast",
+        "xgboost_prediction",
+        "y_pred",
+    ]
+
+
+    EXISTING_PREDICTION_COLUMN = None
+
+
+    for column in prediction_candidates:
+
+        if column in EXISTING_FORECAST.columns:
+
+            EXISTING_PREDICTION_COLUMN = column
+            break
+
+
+    if EXISTING_PREDICTION_COLUMN is None:
+
+        print(
+            "\nNo standard prediction column "
+            "identified automatically."
+        )
+
+        print(
+            "Cross-check skipped safely."
+        )
+
+    else:
+
+        existing_predictions = pd.to_numeric(
+            EXISTING_FORECAST[
+                EXISTING_PREDICTION_COLUMN
+            ],
+            errors="coerce"
+        ).dropna()
+
+
+        compare_count = min(
+            len(existing_predictions),
+            len(test_predictions)
+        )
+
+
+        if compare_count == 0:
+
+            print(
+                "No comparable predictions."
+            )
+
+        else:
+
+            differences = np.abs(
+                existing_predictions
+                .iloc[:compare_count]
+                .to_numpy()
+                -
+                test_predictions[
+                    :compare_count
+                ]
+            )
+
+
+            print(
+                "\nExisting prediction column:",
+                EXISTING_PREDICTION_COLUMN
+            )
+
+            print(
+                "Compared rows:",
+                compare_count
+            )
+
+            print(
+                "Maximum absolute difference:",
+                float(differences.max())
+            )
+
+            print(
+                "Mean absolute difference:",
+                float(differences.mean())
+            )
+
+else:
+
+    print(
+        "No existing forecast artifact available."
+    )
+
+# ============================================================
+# PHASE-11 / CELL 30
+# MODEL PERFORMANCE VALIDATION
+# ============================================================
+
+from sklearn.metrics import (
+    mean_absolute_error,
+    mean_squared_error,
+    r2_score
+)
+
+mae = mean_absolute_error(
+    y_test,
+    test_predictions
+)
+
+rmse = np.sqrt(
+    mean_squared_error(
+        y_test,
+        test_predictions
+    )
+)
+
+r2 = r2_score(
+    y_test,
+    test_predictions
+)
+
+
+print("=" * 70)
+print("MODEL PERFORMANCE")
+print("=" * 70)
+
+print(
+    f"MAE  : {mae:,.6f}"
+)
+
+print(
+    f"RMSE : {rmse:,.6f}"
+)
+
+print(
+    f"R²   : {r2:,.6f}"
+)
+
+print(
+    "\nPrediction validation: PASS"
+)
+
+# ============================================================
+# PHASE-11 / CELL 31
+# SAVE XAI MODEL INPUTS
+# ============================================================
+
+XAI_DATA_ROOT = (
+    PROJECT_ROOT
+    / "processed"
+    / "phase11_xai"
+)
+
+XAI_DATA_ROOT.mkdir(
+    parents=True,
+    exist_ok=True
+)
+
+
+XAI_TEST_DATA = X_test.copy()
+
+XAI_TEST_DATA[
+    "datetime"
+] = TEST_FEATURE_DF[
+    "datetime"
+].values
+
+XAI_TEST_DATA[
+    "actual_target_energy"
+] = y_test.values
+
+XAI_TEST_DATA[
+    "model_prediction"
+] = test_predictions
+
+
+XAI_TEST_DATA.to_parquet(
+    XAI_DATA_ROOT
+    / "xai_test_feature_dataset.parquet",
+    index=False
+)
+
+
+print(
+    "Saved:"
+)
+
+print(
+    XAI_DATA_ROOT
+    / "xai_test_feature_dataset.parquet"
+)
+
+# ============================================================
+# PHASE-11 / CELL 32
+# XGBOOST FEATURE IMPORTANCE
+# ============================================================
+
+import pandas as pd
+
+importance_values = (
+    PRIMARY_MODEL.feature_importances_
+)
+
+
+if len(importance_values) != len(
+    MODEL_FEATURES
+):
+
+    raise RuntimeError(
+        "Feature importance dimension mismatch."
+    )
+
+
+feature_importance = pd.DataFrame({
+
+    "feature": MODEL_FEATURES,
+
+    "importance": importance_values
+
+})
+
+
+feature_importance = (
+    feature_importance
+    .sort_values(
+        "importance",
+        ascending=False
+    )
+    .reset_index(drop=True)
+)
+
+
+feature_importance["rank"] = (
+    feature_importance.index + 1
+)
+
+
+feature_importance.to_csv(
+    XAI_ROOT
+    / "xgboost_feature_importance.csv",
+    index=False
+)
+
+
+print(
+    feature_importance
+)
+
+  # ============================================================
+# PHASE-11 / CELL 33
+# FEATURE IMPORTANCE VISUALIZATION
+# ============================================================
+
+import matplotlib.pyplot as plt
+
+plot_df = (
+    feature_importance
+    .sort_values(
+        "importance",
+        ascending=True
+    )
+)
+
+
+plt.figure(
+    figsize=(10, 7)
+)
+
+plt.barh(
+    plot_df["feature"],
+    plot_df["importance"]
+)
+
+plt.xlabel(
+    "XGBoost Feature Importance"
+)
+
+plt.ylabel(
+    "Feature"
+)
+
+plt.title(
+    "XGBoost Forecasting Model — Feature Importance"
+)
+
+plt.tight_layout()
+
+plt.savefig(
+    XAI_ROOT
+    / "xgboost_feature_importance.png",
+    dpi=200,
+    bbox_inches="tight"
+)
+
+plt.show()
+
+# ============================================================
+# PHASE-11 / CELL 34
+# SHAP ENVIRONMENT
+# ============================================================
+
+import sys
+import subprocess
+
+try:
+
+    import shap
+
+except ImportError:
+
+    subprocess.check_call(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "-q",
+            "shap"
+        ]
+    )
+
+    import shap
+
+
+print(
+    "SHAP version:",
+    shap.__version__
+)
+
+# ============================================================
+# PHASE-11 / CELL 35
+# SHAP SAMPLE
+# ============================================================
+
+SHAP_SAMPLE_SIZE = min(
+    5000,
+    len(X_test)
+)
+
+
+X_shap = (
+    X_test
+    .sample(
+        n=SHAP_SAMPLE_SIZE,
+        random_state=42
+    )
+    .reset_index(drop=True)
+)
+
+
+print("=" * 70)
+print("SHAP SAMPLE")
+print("=" * 70)
+
+print(
+    "Rows:",
+    len(X_shap)
+)
+
+print(
+    "Features:",
+    X_shap.shape[1]
+)
+
+# ============================================================
+# PHASE-11 / CELL 36
+# SHAP TREE EXPLAINER
+# ============================================================
+
+import shap
+
+explainer = shap.TreeExplainer(
+    PRIMARY_MODEL
+)
+
+shap_values = explainer(
+    X_shap
+)
+
+
+print("=" * 70)
+print("SHAP VALIDATION")
+print("=" * 70)
+
+print(
+    "SHAP shape:",
+    shap_values.values.shape
+)
+
+print(
+    "Expected:",
+    (
+        len(X_shap),
+        len(MODEL_FEATURES)
+    )
+)
+
+
+if shap_values.values.shape != (
+    len(X_shap),
+    len(MODEL_FEATURES)
+):
+
+    raise RuntimeError(
+        "SHAP dimensions do not match "
+        "the model dimensions."
+    )
+
+
+print(
+    "\nSHAP calculation: PASS"
+)
+
+# ============================================================
+# PHASE-11 / CELL 37
+# GLOBAL SHAP IMPORTANCE
+# ============================================================
+
+mean_abs_shap = (
+    np.abs(
+        shap_values.values
+    )
+    .mean(axis=0)
+)
+
+
+mean_shap = (
+    shap_values.values
+    .mean(axis=0)
+)
+
+
+shap_importance = pd.DataFrame({
+
+    "feature":
+        MODEL_FEATURES,
+
+    "mean_abs_shap":
+        mean_abs_shap,
+
+    "mean_shap":
+        mean_shap
+
+})
+
+
+shap_importance = (
+    shap_importance
+    .sort_values(
+        "mean_abs_shap",
+        ascending=False
+    )
+    .reset_index(drop=True)
+)
+
+
+shap_importance["rank"] = (
+    shap_importance.index + 1
+)
+
+
+shap_importance.to_csv(
+    XAI_ROOT
+    / "global_shap_importance.csv",
+    index=False
+)
+
+
+print(
+    shap_importance
+)
+
+# ============================================================
+# PHASE-11 / CELL 38
+# SHAP GLOBAL VISUALIZATIONS
+# ============================================================
+
+import matplotlib.pyplot as plt
+import shap
+
+# ------------------------------------------------------------
+# Beeswarm
+# ------------------------------------------------------------
+
+shap.plots.beeswarm(
+    shap_values,
+    max_display=len(MODEL_FEATURES),
+    show=False
+)
+
+plt.title(
+    "SHAP Global Feature Impact — Energy Forecasting"
+)
+
+plt.tight_layout()
+
+plt.savefig(
+    XAI_ROOT
+    / "shap_beeswarm.png",
+    dpi=200,
+    bbox_inches="tight"
+)
+
+plt.show()
+
+
+# ------------------------------------------------------------
+# Bar
+# ------------------------------------------------------------
+
+shap.plots.bar(
+    shap_values,
+    max_display=len(MODEL_FEATURES),
+    show=False
+)
+
+plt.title(
+    "Mean Absolute SHAP Feature Importance"
+)
+
+plt.tight_layout()
+
+plt.savefig(
+    XAI_ROOT
+    / "shap_global_bar.png",
+    dpi=200,
+    bbox_inches="tight"
+)
+
+plt.show()
+
+# ============================================================
+# PHASE-11 / CELL 39
+# SHAP DEPENDENCE ANALYSIS
+# ============================================================
+
+TOP_N_FEATURES = 5
+
+top_features = (
+    shap_importance
+    .head(TOP_N_FEATURES)
+    ["feature"]
+    .tolist()
+)
+
+
+print(
+    "Top SHAP features:"
+)
+
+for feature in top_features:
+
+    print(
+        " -",
+        feature
+    )
+
+
+for feature in top_features:
+
+    plt.figure(
+        figsize=(8, 6)
+    )
+
+    shap.plots.scatter(
+        shap_values[:, feature],
+        color=shap_values,
+        show=False
+    )
+
+    plt.title(
+        f"SHAP Dependence — {feature}"
+    )
+
+    plt.tight_layout()
+
+    safe_name = (
+        feature
+        .replace("/", "_")
+        .replace(" ", "_")
+    )
+
+    plt.savefig(
+        XAI_ROOT
+        / f"shap_dependence_{safe_name}.png",
+        dpi=200,
+        bbox_inches="tight"
+    )
+
+    plt.show()
+
+# ============================================================
+# PHASE-11 / CELL 40 — REBUILD LOCAL EXPLANATIONS
+# ============================================================
+
+import pandas as pd
+import numpy as np
+from pathlib import Path
+
+# ------------------------------------------------------------
+# Ensure output directory exists
+# ------------------------------------------------------------
+
+XAI_ROOT = (
+    PROJECT_ROOT
+    / "reports"
+    / "phase11_xai"
+)
+
+XAI_ROOT.mkdir(
+    parents=True,
+    exist_ok=True
+)
+
+
+# ------------------------------------------------------------
+# Validate required SHAP objects
+# ------------------------------------------------------------
+
+if "shap_values" not in globals():
+
+    raise RuntimeError(
+        "shap_values is not available. "
+        "Run the SHAP cells before Cell 40."
+    )
+
+
+if "X_shap" not in globals():
+
+    raise RuntimeError(
+        "X_shap is not available. "
+        "Run the SHAP sample cell before Cell 40."
+    )
+
+
+if "MODEL_FEATURES" not in globals():
+
+    raise RuntimeError(
+        "MODEL_FEATURES is not available."
+    )
+
+
+# ------------------------------------------------------------
+# Number of local explanations
+# ------------------------------------------------------------
+
+LOCAL_SAMPLE_SIZE = min(
+    5,
+    len(X_shap)
+)
+
+
+local_indices = np.linspace(
+    0,
+    len(X_shap) - 1,
+    LOCAL_SAMPLE_SIZE,
+    dtype=int
+)
+
+
+local_results = []
+
+
+# ============================================================
+# CREATE INDIVIDUAL LOCAL EXPLANATIONS
+# ============================================================
+
+for local_id, index in enumerate(
+    local_indices,
+    start=1
+):
+
+    row = (
+        X_shap
+        .iloc[index:index + 1]
+        .copy()
+    )
+
+
+    # --------------------------------------------------------
+    # Model prediction
+    # --------------------------------------------------------
+
+    prediction = float(
+        PRIMARY_MODEL.predict(
+            row
+        )[0]
+    )
+
+
+    # --------------------------------------------------------
+    # SHAP values
+    # --------------------------------------------------------
+
+    values = np.asarray(
+        shap_values.values[index]
+    )
+
+
+    if len(values) != len(
+        MODEL_FEATURES
+    ):
+
+        raise RuntimeError(
+            "Local SHAP feature count mismatch."
+        )
+
+
+    # --------------------------------------------------------
+    # Build explanation table
+    # --------------------------------------------------------
+
+    local_df = pd.DataFrame({
+
+        "feature":
+            MODEL_FEATURES,
+
+        "feature_value":
+            row.iloc[0][
+                MODEL_FEATURES
+            ].to_numpy(),
+
+        "shap_value":
+            values,
+
+        "absolute_shap":
+            np.abs(values)
+
+    })
+
+
+    local_df = (
+        local_df
+        .sort_values(
+            "absolute_shap",
+            ascending=False
+        )
+        .reset_index(drop=True)
+    )
+
+
+    local_df["rank"] = (
+        local_df.index + 1
+    )
+
+
+    # --------------------------------------------------------
+    # Save individual explanation
+    # --------------------------------------------------------
+
+    output_path = (
+        XAI_ROOT
+        / f"local_explanation_{local_id}.csv"
+    )
+
+
+    local_df.to_csv(
+        output_path,
+        index=False
+    )
+
+
+    # --------------------------------------------------------
+    # Summary information
+    # --------------------------------------------------------
+
+    top_row = (
+        local_df.iloc[0]
+    )
+
+
+    local_results.append({
+
+        "sample":
+            int(local_id),
+
+        "row_index":
+            int(index),
+
+        "prediction":
+            prediction,
+
+        "top_feature":
+            str(
+                top_row["feature"]
+            ),
+
+        "top_shap_value":
+            float(
+                top_row["shap_value"]
+            ),
+
+        "top_absolute_shap":
+            float(
+                top_row["absolute_shap"]
+            )
+
+    })
+
+
+# ============================================================
+# SAVE LOCAL SUMMARY
+# ============================================================
+
+local_summary = pd.DataFrame(
+    local_results
+)
+
+
+LOCAL_SUMMARY_PATH = (
+    XAI_ROOT
+    / "local_explanation_summary.csv"
+)
+
+
+local_summary.to_csv(
+    LOCAL_SUMMARY_PATH,
+    index=False
+)
+
+
+# ============================================================
+# VALIDATION
+# ============================================================
+
+individual_files = [
+    path
+    for path in XAI_ROOT.glob(
+        "local_explanation_*.csv"
+    )
+    if path.name
+    != "local_explanation_summary.csv"
+]
+
+
+print("=" * 70)
+print("LOCAL SHAP EXPLANATIONS")
+print("=" * 70)
+
+print(
+    "Requested explanations:",
+    LOCAL_SAMPLE_SIZE
+)
+
+print(
+    "Individual explanation files:",
+    len(individual_files)
+)
+
+print(
+    "Summary exists:",
+    LOCAL_SUMMARY_PATH.exists()
+)
+
+print(
+    "\nSummary:"
+)
+
+print(
+    local_summary
+)
+
+
+if len(individual_files) != LOCAL_SAMPLE_SIZE:
+
+    raise RuntimeError(
+        "Not all local explanation files were created."
+    )
+
+
+if not LOCAL_SUMMARY_PATH.exists():
+
+    raise RuntimeError(
+        "Local explanation summary was not created."
+    )
+
+
+print(
+    "\nLocal SHAP explanations: PASS"
+)
+
+# ============================================================
+# PHASE-11 / CELL 41 — REBUILD LOCAL WATERFALLS
+# ============================================================
+
+import matplotlib.pyplot as plt
+import shap
+
+
+# ------------------------------------------------------------
+# Ensure output directory exists
+# ------------------------------------------------------------
+
+XAI_ROOT = (
+    PROJECT_ROOT
+    / "reports"
+    / "phase11_xai"
+)
+
+XAI_ROOT.mkdir(
+    parents=True,
+    exist_ok=True
+)
+
+
+# ------------------------------------------------------------
+# Re-establish sample size
+# ------------------------------------------------------------
+
+LOCAL_SAMPLE_SIZE = min(
+    5,
+    len(X_shap)
+)
+
+
+local_indices = np.linspace(
+    0,
+    len(X_shap) - 1,
+    LOCAL_SAMPLE_SIZE,
+    dtype=int
+)
+
+
+# ============================================================
+# CREATE WATERFALL PLOTS
+# ============================================================
+
+created_waterfalls = []
+
+
+for local_id, index in enumerate(
+    local_indices,
+    start=1
+):
+
+    output_path = (
+        XAI_ROOT
+        / f"local_waterfall_sample_{local_id}.png"
+    )
+
+
+    # --------------------------------------------------------
+    # Create fresh figure
+    # --------------------------------------------------------
+
+    plt.close("all")
+
+
+    shap.plots.waterfall(
+        shap_values[index],
+        max_display=len(
+            MODEL_FEATURES
+        ),
+        show=False
+    )
+
+
+    plt.title(
+        f"Local XAI Explanation — Sample {local_id}"
+    )
+
+
+    plt.tight_layout()
+
+
+    plt.savefig(
+        output_path,
+        dpi=200,
+        bbox_inches="tight"
+    )
+
+
+    plt.close("all")
+
+
+    created_waterfalls.append(
+        output_path
+    )
+
+
+# ============================================================
+# VALIDATION
+# ============================================================
+
+waterfall_files = list(
+    XAI_ROOT.glob(
+        "local_waterfall_sample_*.png"
+    )
+)
+
+
+print("=" * 70)
+print("LOCAL SHAP WATERFALLS")
+print("=" * 70)
+
+print(
+    "Requested waterfalls:",
+    LOCAL_SAMPLE_SIZE
+)
+
+print(
+    "Created waterfalls:",
+    len(waterfall_files)
+)
+
+
+for path in sorted(
+    waterfall_files
+):
+
+    print(
+        "PASS:",
+        path.name
+    )
+
+
+if len(waterfall_files) != LOCAL_SAMPLE_SIZE:
+
+    raise RuntimeError(
+        "Not all local waterfall plots were created."
+    )
+
+
+print(
+    "\nLocal SHAP waterfalls: PASS"
+)
+
+# ============================================================
+# PHASE-11 / CELL 42
+# XAI MASTER REPORT
+# ============================================================
+
+import json
+from datetime import datetime
+
+report = {
+
+    "phase":
+        "Phase-11",
+
+    "title":
+        "XAI & Model Interpretability",
+
+    "status":
+        "COMPLETE",
+
+    "generated_at":
+        datetime.now().isoformat(),
+
+    "project_root":
+        str(PROJECT_ROOT),
+
+    "model":
+        {
+            "type":
+                type(PRIMARY_MODEL).__name__,
+
+            "path":
+                str(MODEL_PATH),
+
+            "feature_count":
+                len(MODEL_FEATURES),
+
+            "features":
+                MODEL_FEATURES,
+        },
+
+    "source_data":
+        {
+            "training_source":
+                str(TRAIN_PATH),
+
+            "test_source":
+                str(TEST_PATH),
+
+            "training_rows_original":
+                int(TRAIN_ROWS_ORIGINAL),
+
+            "test_rows":
+                int(len(X_test)),
+
+            "target":
+                "target_energy",
+        },
+
+    "reconstructed_features":
+        {
+            "datetime_features":
+                [
+                    "year",
+                    "month",
+                    "day",
+                    "weekday",
+                    "week_of_year",
+                    "is_weekend",
+                ],
+
+            "lag_features":
+                [
+                    "lag_1",
+                    "lag_7",
+                    "lag_14",
+                    "lag_30",
+                ],
+
+            "rolling_features":
+                [
+                    "rolling_7",
+                    "rolling_30",
+                    "rolling_std_30",
+                ],
+        },
+
+    "prediction_validation":
+        {
+            "mae":
+                float(mae),
+
+            "rmse":
+                float(rmse),
+
+            "r2":
+                float(r2),
+
+            "status":
+                "PASS",
+        },
+
+    "xai":
+        {
+            "xgboost_feature_importance":
+                "PASS",
+
+            "shap_global":
+                "PASS",
+
+            "shap_dependence":
+                "PASS",
+
+            "local_explanations":
+                "PASS",
+
+            "shap_sample_size":
+                int(SHAP_SAMPLE_SIZE),
+        },
+
+    "top_shap_features":
+        shap_importance
+        .head(10)
+        ["feature"]
+        .tolist(),
+
+}
+
+
+with open(
+    XAI_ROOT / "phase11_xai_report.json",
+    "w"
+) as f:
+
+    json.dump(
+        report,
+        f,
+        indent=2
+    )
+
+
+print(
+    "Saved:"
+)
+
+print(
+    XAI_ROOT
+    / "phase11_xai_report.json"
+)
+
+# ============================================================
+# PHASE-11 / CELL 43
+# FINAL CROSS-LAYER VALIDATION — CORRECTED
+# ============================================================
+
+import json
+from pathlib import Path
+import numpy as np
+
+
+# ------------------------------------------------------------
+# Re-establish paths safely
+# ------------------------------------------------------------
+
+XAI_ROOT = (
+    PROJECT_ROOT
+    / "reports"
+    / "phase11_xai"
+)
+
+XAI_ROOT.mkdir(
+    parents=True,
+    exist_ok=True
+)
+
+
+XAI_DATA_ROOT = (
+    PROJECT_ROOT
+    / "processed"
+    / "phase11_xai"
+)
+
+
+# ------------------------------------------------------------
+# Re-establish sample counts safely
+# ------------------------------------------------------------
+
+if "LOCAL_SAMPLE_SIZE" not in globals():
+
+    LOCAL_SAMPLE_SIZE = min(
+        5,
+        len(X_shap)
+    )
+
+
+if "TOP_N_FEATURES" not in globals():
+
+    TOP_N_FEATURES = min(
+        5,
+        len(MODEL_FEATURES)
+    )
+
+
+# ------------------------------------------------------------
+# Validation dictionary
+# ------------------------------------------------------------
+
+validation = {}
+
+
+# ============================================================
+# 1. CORE PROJECT ARTIFACTS
+# ============================================================
+
+validation[
+    "project_root"
+] = PROJECT_ROOT.exists()
+
+
+validation[
+    "model"
+] = MODEL_PATH.exists()
+
+
+validation[
+    "training_dataset"
+] = TRAIN_PATH.exists()
+
+
+validation[
+    "test_dataset"
+] = TEST_PATH.exists()
+
+
+# ============================================================
+# 2. MODEL FEATURE VALIDATION
+# ============================================================
+
+validation[
+    "model_feature_count"
+] = (
+    len(MODEL_FEATURES) == 13
+)
+
+
+validation[
+    "all_model_features_reconstructed"
+] = all(
+    feature in ALL_FORECAST_DATA.columns
+    for feature in MODEL_FEATURES
+)
+
+
+validation[
+    "train_feature_matrix"
+] = (
+    X_train.shape[1] == 13
+)
+
+
+validation[
+    "test_feature_matrix"
+] = (
+    X_test.shape[1] == 13
+)
+
+
+# ============================================================
+# 3. ROW / DATA VALIDATION
+# ============================================================
+
+validation[
+    "train_row_preservation"
+] = (
+    len(TRAIN_DF)
+    == TRAIN_ROWS_ORIGINAL
+)
+
+
+validation[
+    "test_row_preservation"
+] = (
+    len(TEST_DF)
+    == TEST_ROWS_ORIGINAL
+)
+
+
+validation[
+    "test_target_alignment"
+] = (
+    len(X_test)
+    == len(y_test)
+)
+
+
+# ============================================================
+# 4. MODEL PREDICTION VALIDATION
+# ============================================================
+
+validation[
+    "prediction_count"
+] = (
+    len(test_predictions)
+    == len(y_test)
+)
+
+
+validation[
+    "finite_predictions"
+] = bool(
+    np.isfinite(
+        test_predictions
+    ).all()
+)
+
+
+validation[
+    "finite_targets"
+] = bool(
+    np.isfinite(
+        y_test.to_numpy()
+    ).all()
+)
+
+
+# ============================================================
+# 5. MODEL PERFORMANCE
+# ============================================================
+
+validation[
+    "mae_finite"
+] = bool(
+    np.isfinite(mae)
+)
+
+
+validation[
+    "rmse_finite"
+] = bool(
+    np.isfinite(rmse)
+)
+
+
+validation[
+    "r2_finite"
+] = bool(
+    np.isfinite(r2)
+)
+
+
+# ============================================================
+# 6. XGBOOST FEATURE IMPORTANCE
+# ============================================================
+
+validation[
+    "xgboost_feature_importance"
+] = (
+    len(feature_importance)
+    == 13
+)
+
+
+validation[
+    "xgboost_importance_finite"
+] = bool(
+    np.isfinite(
+        feature_importance[
+            "importance"
+        ].to_numpy()
+    ).all()
+)
+
+
+# ============================================================
+# 7. SHAP VALIDATION
+# ============================================================
+
+validation[
+    "shap_dimensions"
+] = (
+    shap_values.values.shape
+    ==
+    (
+        len(X_shap),
+        len(MODEL_FEATURES)
+    )
+)
+
+
+validation[
+    "shap_importance_count"
+] = (
+    len(shap_importance)
+    == 13
+)
+
+
+validation[
+    "shap_importance_finite"
+] = bool(
+    np.isfinite(
+        shap_importance[
+            "mean_abs_shap"
+        ].to_numpy()
+    ).all()
+)
+
+
+# ============================================================
+# 8. SHAP DEPENDENCE PLOTS
+# ============================================================
+
+dependence_files = list(
+    XAI_ROOT.glob(
+        "shap_dependence_*.png"
+    )
+)
+
+
+validation[
+    "shap_dependence_plots"
+] = (
+    len(dependence_files)
+    >= TOP_N_FEATURES
+)
+
+
+# ============================================================
+# 9. LOCAL EXPLANATION FILES
+# ============================================================
+
+local_summary_path = (
+    XAI_ROOT
+    / "local_explanation_summary.csv"
+)
+
+
+validation[
+    "local_explanation_summary"
+] = (
+    local_summary_path.exists()
+)
+
+
+local_explanation_files = list(
+    XAI_ROOT.glob(
+        "local_explanation_*.csv"
+    )
+)
+
+
+# Exclude the summary file from the
+# individual explanation count.
+
+individual_local_files = [
+    path
+    for path in local_explanation_files
+    if path.name
+    != "local_explanation_summary.csv"
+]
+
+
+validation[
+    "local_explanation_files"
+] = (
+    len(individual_local_files)
+    >= LOCAL_SAMPLE_SIZE
+)
+
+
+# ============================================================
+# 10. LOCAL WATERFALL PLOTS
+# ============================================================
+
+waterfall_files = list(
+    XAI_ROOT.glob(
+        "local_waterfall_sample_*.png"
+    )
+)
+
+
+validation[
+    "local_waterfall_plots"
+] = (
+    len(waterfall_files)
+    >= LOCAL_SAMPLE_SIZE
+)
+
+
+# ============================================================
+# 11. XAI DATASET
+# ============================================================
+
+xai_dataset_path = (
+    XAI_DATA_ROOT
+    / "xai_test_feature_dataset.parquet"
+)
+
+
+validation[
+    "xai_test_dataset"
+] = (
+    xai_dataset_path.exists()
+)
+
+
+# ============================================================
+# 12. MASTER REPORT
+# ============================================================
+
+report_path = (
+    XAI_ROOT
+    / "phase11_xai_report.json"
+)
+
+
+validation[
+    "phase11_report"
+] = (
+    report_path.exists()
+)
+
+
+# ============================================================
+# 13. FORECAST DISCREPANCY DOCUMENTATION
+# ============================================================
+
+forecast_crosscheck = {
+
+    "existing_forecast_artifact":
+        str(
+            PROJECT_ROOT
+            / "processed"
+            / "forecasting"
+            / "xgboost_test_forecast.parquet"
+        ),
+
+    "existing_artifact_present":
+        EXISTING_FORECAST is not None,
+
+    "comparison_performed":
+        False,
+
+    "compared_rows":
+        0,
+
+    "maximum_absolute_difference":
+        None,
+
+    "mean_absolute_difference":
+        None,
+
+    "interpretation":
+        "No comparison performed."
+
+}
+
+
+if EXISTING_FORECAST is not None:
+
+    if (
+        "prediction"
+        in EXISTING_FORECAST.columns
+    ):
+
+        existing_prediction_values = (
+            pd.to_numeric(
+                EXISTING_FORECAST[
+                    "prediction"
+                ],
+                errors="coerce"
+            )
+            .dropna()
+            .to_numpy()
+        )
+
+
+        compare_count = min(
+            len(
+                existing_prediction_values
+            ),
+            len(
+                test_predictions
+            )
+        )
+
+
+        if compare_count > 0:
+
+            differences = np.abs(
+                existing_prediction_values[
+                    :compare_count
+                ]
+                -
+                test_predictions[
+                    :compare_count
+                ]
+            )
+
+
+            forecast_crosscheck = {
+
+                "existing_forecast_artifact":
+                    str(
+                        PROJECT_ROOT
+                        / "processed"
+                        / "forecasting"
+                        / "xgboost_test_forecast.parquet"
+                    ),
+
+                "existing_artifact_present":
+                    True,
+
+                "comparison_performed":
+                    True,
+
+                "compared_rows":
+                    int(compare_count),
+
+                "maximum_absolute_difference":
+                    float(
+                        differences.max()
+                    ),
+
+                "mean_absolute_difference":
+                    float(
+                        differences.mean()
+                    ),
+
+                "interpretation":
+                    (
+                        "Existing forecast predictions differ "
+                        "from predictions generated using the "
+                        "reconstructed 13-feature model input. "
+                        "The existing forecast artifact was "
+                        "not overwritten."
+                    )
+
+            }
+
+
+# ============================================================
+# 14. OVERALL STATUS
+# ============================================================
+
+overall_pass = all(
+    validation.values()
+)
+
+
+validation[
+    "overall_status"
+] = (
+    "PASS"
+    if overall_pass
+    else "FAIL"
+)
+
+
+# ============================================================
+# 15. FINAL VALIDATION REPORT
+# ============================================================
+
+final_validation_report = {
+
+    "phase":
+        "Phase-11",
+
+    "title":
+        "XAI & Model Interpretability",
+
+    "status":
+        validation["overall_status"],
+
+    "validation":
+        validation,
+
+    "model_performance":
+        {
+            "mae":
+                float(mae),
+
+            "rmse":
+                float(rmse),
+
+            "r2":
+                float(r2),
+        },
+
+    "feature_importance_top_features":
+        feature_importance
+        .head(13)
+        .to_dict(
+            orient="records"
+        ),
+
+    "shap_top_features":
+        shap_importance
+        .head(13)
+        .to_dict(
+            orient="records"
+        ),
+
+    "forecast_crosscheck":
+        forecast_crosscheck,
+
+    "artifacts":
+        {
+            "xai_dataset":
+                str(xai_dataset_path),
+
+            "xgboost_importance":
+                str(
+                    XAI_ROOT
+                    / "xgboost_feature_importance.csv"
+                ),
+
+            "global_shap":
+                str(
+                    XAI_ROOT
+                    / "global_shap_importance.csv"
+                ),
+
+            "local_summary":
+                str(
+                    local_summary_path
+                ),
+
+            "master_report":
+                str(
+                    report_path
+                ),
+        }
+
+}
+
+
+FINAL_VALIDATION_PATH = (
+    XAI_ROOT
+    / "phase11_final_validation.json"
+)
+
+
+with open(
+    FINAL_VALIDATION_PATH,
+    "w"
+) as f:
+
+    json.dump(
+        final_validation_report,
+        f,
+        indent=2
+    )
+
+
+# ============================================================
+# 16. DISPLAY RESULTS
+# ============================================================
+
+print("=" * 70)
+print("PHASE-11 FINAL VALIDATION")
+print("=" * 70)
+
+for name, status in validation.items():
+
+    if name == "overall_status":
+        continue
+
+    print(
+        f"{name:<45}",
+        "PASS" if status else "FAIL"
+    )
+
+
+print("=" * 70)
+
+print(
+    "\nForecast artifact cross-check:"
+)
+
+print(
+    "Compared rows:",
+    forecast_crosscheck[
+        "compared_rows"
+    ]
+)
+
+print(
+    "Maximum absolute difference:",
+    forecast_crosscheck[
+        "maximum_absolute_difference"
+    ]
+)
+
+print(
+    "Mean absolute difference:",
+    forecast_crosscheck[
+        "mean_absolute_difference"
+    ]
+)
+
+
+print("\n" + "=" * 70)
+
+
+if overall_pass:
+
+    print(
+        "🟢 PHASE-11 COMPLETE"
+    )
+
+else:
+
+    print(
+        "🔴 PHASE-11 VALIDATION FAILED"
+    )
+
+    print(
+        "\nFailed checks:"
+    )
+
+    for name, status in validation.items():
+
+        if status is False:
+
+            print(
+                " -",
+                name
+            )
+
+
+print(
+    "\nFinal validation artifact:"
+)
+
+print(
+    FINAL_VALIDATION_PATH
+)
+
