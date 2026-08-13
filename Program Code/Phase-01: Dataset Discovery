@@ -1,0 +1,42 @@
+import pandas as pd
+import numpy as np
+import os
+files=os.listdir(DATA_PATH)
+
+csv_files=[
+    f for f in files
+    if f.endswith(".csv")
+]
+
+
+csv_files
+def profile_dataset(path):
+
+    df=pd.read_csv(path,nrows=5)
+
+
+    return {
+        "file":os.path.basename(path),
+        "columns":len(df.columns),
+        "sample_columns":list(df.columns[:10])
+    }
+
+
+
+profiles=[]
+
+
+for file in csv_files:
+
+    profiles.append(
+        profile_dataset(
+            DATA_PATH+"/"+file
+        )
+    )
+
+
+profile=pd.DataFrame(profiles)
+
+profile
+
+
