@@ -1,959 +1,182 @@
-!pip -q install pyarrow plotly seaborn
+import os
 import warnings
 warnings.filterwarnings("ignore")
 
 import numpy as np
 import pandas as pd
-
 import matplotlib.pyplot as plt
 import seaborn as sns
-
 import plotly.express as px
 import plotly.graph_objects as go
-
 from plotly.subplots import make_subplots
 
-from IPython.display import display
-
+# Plotting & Display Configuration
 sns.set_style("whitegrid")
-
-plt.rcParams["figure.figsize"] = (12,6)
-
+plt.rcParams["figure.figsize"] = (12, 6)
 pd.set_option("display.max_columns", None)
 pd.set_option("display.max_rows", 100)
 
 print("Libraries Imported Successfully")
 
-from google.colab import drive
+# ============================================================
+# 1. LOAD FEATURE STORE & VALIDATE HEALTH
+# ============================================================
 
-drive.mount('/content/drive')
-
-PROJECT_PATH = "/content/drive/MyDrive/GitHub_Project_01"
-
-FEATURE_STORE = f"{PROJECT_PATH}/feature_store/sustainable_feature_store.parquet"
-
-print(PROJECT_PATH)
-print(FEATURE_STORE)
-
-import os
-
-os.path.exists("/content/drive/MyDrive")
-
-PROJECT_PATH = "/content/drive/MyDrive/GitHub_Project_01"
-
-PROCESSED_PATH = f"{PROJECT_PATH}/processed"
-
-FEATURE_STORE = f"{PROCESSED_PATH}/feature_store/sustainable_feature_store.parquet"
-
-print("Project Path :", PROJECT_PATH)
-print("Processed Path :", PROCESSED_PATH)
-print("Feature Store :", FEATURE_STORE)
-PROJECT_PATH = "/content/drive/MyDrive/GitHub_Project_01"
-
-PROCESSED_PATH = f"{PROJECT_PATH}/processed"
-
-FEATURE_STORE = f"{PROCESSED_PATH}/feature_store/sustainable_feature_store.parquet"
-
-print("Project Path :", PROJECT_PATH)
-print("Processed Path :", PROCESSED_PATH)
-print("Feature Store :", FEATURE_STORE)
-
-import os
-import pandas as pd
+# Ensure PROCESSED_PATH or PROJECT_PATH is defined in your execution environment
+# PROCESSED_PATH = "path/to/processed"
+FEATURE_STORE = os.path.join(PROCESSED_PATH, "feature_store", "sustainable_feature_store.parquet")
 
 assert os.path.exists(FEATURE_STORE), f"Feature store not found:\n{FEATURE_STORE}"
 
 df = pd.read_parquet(FEATURE_STORE)
-
 print("✅ Feature Store Loaded Successfully")
 print(f"Shape : {df.shape}")
 
 memory = df.memory_usage(deep=True).sum() / 1024**2
+print("=" * 50)
+print(f"MEMORY USAGE: {memory:.2f} MB")
+print("=" * 50)
 
-print("="*50)
-print("MEMORY USAGE")
-print("="*50)
-
-print(f"{memory:.2f} MB")
-
-df.head()
-
-df.tail()
-
-df.info()
-print("="*50)
-print("COLUMN NAMES")
-print("="*50)
-
-for i, col in enumerate(df.columns, 1):
-    print(f"{i:02d}. {col}")
-
-dtype_summary = pd.DataFrame(df.dtypes, columns=["Data Type"])
-
-dtype_summary.reset_index(inplace=True)
-
-dtype_summary.columns = ["Column","Data Type"]
-
-dtype_summary
-
-missing = pd.DataFrame(df.isnull().sum(), columns=["Missing Values"])
-
-missing["Percentage"] = (
-    missing["Missing Values"] /
-    len(df)
-) * 100
-
-missing.sort_values(
-    "Missing Values",
-    ascending=False
-).head(20)
-
-duplicates = df.duplicated().sum()
-
-print("="*50)
-print("DUPLICATES")
-print("="*50)
-
-print(duplicates)
-
-df.describe(include="object").T
-
-unique_df = pd.DataFrame({
-    "Column":df.columns,
-    "Unique Values":[df[col].nunique() for col in df.columns]
-})
-
-unique_df.sort_values(
-    "Unique Values",
-    ascending=False
-)
-
-numeric_cols = df.select_dtypes(
-    include=np.number
-).columns.tolist()
-
-categorical_cols = df.select_dtypes(
-    exclude=np.number
-).columns.tolist()
-
-print("Numeric Columns :", len(numeric_cols))
-print("Categorical Columns :", len(categorical_cols))
-
-print("="*50)
-print("DATE RANGE")
-print("="*50)
-
-print("Start :", df["date"].min())
-print("End   :", df["date"].max())
-
-print("="*50)
-print("TOTAL BUILDINGS")
-print("="*50)
-
-total_buildings = df["building_id"].nunique()
-
-print(f"Number of Buildings : {total_buildings}")
-
-
-print("="*50)
-print("TOTAL CAMPUSES & SITES")
-print("="*50)
-
-total_campuses = df["campus"].nunique()
-total_sites = df["site_id"].nunique()
-
-print(f"Campuses : {total_campuses}")
-print(f"Sites    : {total_sites}")
-
-
-print("="*50)
-print("UTILITY DATASETS AVAILABLE")
-print("="*50)
-
-utility_columns = [
-    "electricity",
-    "gas",
-    "steam",
-    "water",
-    "hotwater",
-    "chilledwater",
-    "solar",
-    "irrigation"
-]
-
-available_utilities = [
-    col for col in utility_columns if col in df.columns
-]
-
-for i, utility in enumerate(available_utilities, 1):
-    print(f"{i}. {utility}")
-
-print("\nTotal Utilities :", len(available_utilities))
-
-print("="*70)
-print("UTILITY CONSUMPTION SUMMARY")
-print("="*70)
-
-utility_summary = df[available_utilities].describe().T
-
-display(utility_summary)
-
-print("="*70)
-print("                 DATASET HEALTH REPORT")
-print("="*70)
-
-# Dataset Information
-rows, cols = df.shape
-memory = df.memory_usage(deep=True).sum() / (1024**2)
-
+# Dataset Summary & Health Report
 numeric_cols = df.select_dtypes(include="number").columns.tolist()
 categorical_cols = df.select_dtypes(exclude="number").columns.tolist()
 
-missing_values = df.isnull().sum().sum()
-duplicate_rows = df.duplicated().sum()
-
-total_buildings = df["building_id"].nunique()
-total_campuses = df["campus"].nunique()
-total_sites = df["site_id"].nunique()
-total_building_types = df["building_type"].nunique()
-
-date_start = df["date"].min()
-date_end = df["date"].max()
-
-utility_columns = [
-    "electricity",
-    "gas",
-    "steam",
-    "water",
-    "hotwater",
-    "chilledwater",
-    "solar",
-    "irrigation"
-]
-
-available_utilities = [
-    col for col in utility_columns if col in df.columns
-]
-
-print(f"Rows                     : {rows:,}")
-print(f"Columns                  : {cols}")
-
+print("=" * 70)
+print("DATASET HEALTH REPORT")
+print("=" * 70)
+print(f"Rows                     : {df.shape[0]:,}")
+print(f"Columns                  : {df.shape[1]}")
 print(f"Memory Usage             : {memory:.2f} MB")
-
 print(f"Numeric Features         : {len(numeric_cols)}")
 print(f"Categorical Features     : {len(categorical_cols)}")
-
-print(f"Missing Values           : {missing_values}")
-print(f"Duplicate Rows           : {duplicate_rows}")
-
-print(f"Buildings                : {total_buildings}")
-print(f"Campuses                 : {total_campuses}")
-print(f"Sites                    : {total_sites}")
-
-print(f"Building Types           : {total_building_types}")
-
-print(f"Date Range Start         : {date_start}")
-print(f"Date Range End           : {date_end}")
-
-print(f"Utilities Available      : {len(available_utilities)}")
-print(f"Utility Names            : {', '.join(available_utilities)}")
-
-print("="*70)
-print("STATUS : DATASET IS CLEAN AND READY FOR EDA")
-print("="*70)
+print(f"Missing Values           : {df.isnull().sum().sum()}")
+print(f"Duplicate Rows           : {df.duplicated().sum()}")
+print(f"Buildings                : {df['building_id'].nunique()}")
+print(f"Campuses                 : {df['campus'].nunique()}")
+print(f"Sites                    : {df['site_id'].nunique()}")
+print(f"Date Range Start         : {df['date'].min()}")
+print(f"Date Range End           : {df['date'].max()}")
+print("=" * 70)
 
 # ============================================================
-# PART-2 : ENERGY CONSUMPTION INTELLIGENCE
-# Daily Energy Aggregation
+# 2. ENERGY CONSUMPTION INTELLIGENCE & EDA
 # ============================================================
-
-eda_daily = (
-    df
-    .groupby("date")
-    .agg({
-        "electricity":"sum",
-        "gas":"sum",
-        "steam":"sum",
-        "water":"sum",
-        "solar":"sum",
-        "chilledwater":"sum",
-        "hotwater":"sum"
-    })
-    .reset_index()
-)
-
-
-eda_daily.head()
-
-import plotly.express as px
-
-
-fig = px.line(
-    eda_daily,
-    x="date",
-    y="electricity",
-    title="Daily Electricity Consumption Trend",
-    template="plotly_white"
-)
-
-
-fig.update_layout(
-    height=500
-)
-
-fig.show()
-
-monthly_energy = (
-    df
-    .assign(month=df["date"].dt.month)
-    .groupby("month")
-    ["electricity"]
-    .mean()
-    .reset_index()
-)
-
-
-fig = px.bar(
-    monthly_energy,
-    x="month",
-    y="electricity",
-    title="Average Monthly Electricity Consumption",
-    template="plotly_white"
-)
-
-fig.show()
-
-season_energy = (
-    df
-    .groupby("season")
-    ["electricity"]
-    .mean()
-    .reset_index()
-)
-
-
-fig = px.bar(
-    season_energy,
-    x="season",
-    y="electricity",
-    color="season",
-    title="Average Electricity Consumption by Season"
-)
-
-fig.show()
 
 utility_columns = [
-    "electricity",
-    "gas",
-    "steam",
-    "water",
-    "solar",
-    "chilledwater",
-    "hotwater",
-    "irrigation"
+    "electricity", "gas", "steam", "water", 
+    "solar", "chilledwater", "hotwater", "irrigation"
 ]
+available_utilities = [col for col in utility_columns if col in df.columns]
 
-
-utility_profile = (
-    df[utility_columns]
-    .sum()
+# Daily Aggregation
+eda_daily = (
+    df.groupby("date")
+    .agg({col: "sum" for col in available_utilities if col in df.columns})
     .reset_index()
 )
 
+# Visualizations (Plotly)
+fig_daily = px.line(eda_daily, x="date", y="electricity", title="Daily Electricity Consumption Trend", template="plotly_white")
+fig_daily.update_layout(height=500)
+fig_daily.show()
 
-utility_profile.columns=[
-    "utility",
-    "total_consumption"
-]
+monthly_energy = df.assign(month=df["date"].dt.month).groupby("month")["electricity"].mean().reset_index()
+fig_monthly = px.bar(monthly_energy, x="month", y="electricity", title="Average Monthly Electricity Consumption", template="plotly_white")
+fig_monthly.show()
 
+season_energy = df.groupby("season")["electricity"].mean().reset_index()
+fig_season = px.bar(season_energy, x="season", y="electricity", color="season", title="Average Electricity Consumption by Season")
+fig_season.show()
 
-utility_profile
+utility_profile = df[available_utilities].sum().reset_index()
+utility_profile.columns = ["utility", "total_consumption"]
+fig_pie = px.pie(utility_profile, names="utility", values="total_consumption", title="Infrastructure Utility Consumption Distribution", hole=0.45)
+fig_pie.show()
 
-fig = px.pie(
-    utility_profile,
-    names="utility",
-    values="total_consumption",
-    title="Infrastructure Utility Consumption Distribution",
-    hole=0.45
-)
+campus_energy = df.groupby("campus")["electricity"].sum().sort_values(ascending=False).reset_index()
+campus_energy.columns = ["campus", "electricity_consumption"]
+fig_campus = px.bar(campus_energy, x="campus", y="electricity_consumption", color="electricity_consumption", title="Campus-wise Electricity Consumption", template="plotly_white")
+fig_campus.show()
 
-fig.show()
-
-campus_energy = (
-    df
-    .groupby("campus")
-    ["electricity"]
-    .sum()
-    .sort_values(
-        ascending=False
-    )
-    .reset_index()
-)
-
-
-campus_energy.columns=[
-    "campus",
-    "electricity_consumption"
-]
-
-
-campus_energy
-
-fig = px.bar(
-    campus_energy,
-    x="campus",
-    y="electricity_consumption",
-    color="electricity_consumption",
-    title="Campus-wise Electricity Consumption",
-    template="plotly_white"
-)
-
-fig.show()
-
-building_type_energy = (
-    df
-    .groupby("building_type")
-    ["electricity"]
-    .mean()
-    .sort_values(
-        ascending=False
-    )
-    .reset_index()
-)
-
-
-building_type_energy.columns=[
-    "building_type",
-    "average_energy"
-]
-
-
-building_type_energy
-
-fig = px.bar(
-    building_type_energy,
-    x="building_type",
-    y="average_energy",
-    color="average_energy",
-    title="Average Energy Consumption by Building Type"
-)
-
-fig.update_layout(
-    xaxis_tickangle=-45
-)
-
-fig.show()
-
-building_energy = (
-    df
-    .groupby(
-        [
-            "building_id",
-            "building_name",
-            "building_type"
-        ]
-    )
-    ["electricity"]
-    .sum()
-    .reset_index()
-)
-
-
-top_buildings = (
-    building_energy
-    .sort_values(
-        "electricity",
-        ascending=False
-    )
-    .head(20)
-)
-
-
-top_buildings
-
-fig = px.bar(
-    top_buildings,
-    x="building_name",
-    y="electricity",
-    color="building_type",
-    title="Top 20 Energy Consuming Buildings"
-)
-
-
-fig.update_layout(
-    xaxis_tickangle=-45,
-    height=600
-)
-
-
-fig.show()
-
-energy_intensity = (
-    df
-    .groupby(
-        [
-            "building_id",
-            "building_name",
-            "sqm"
-        ]
-    )
-    ["electricity"]
-    .sum()
-    .reset_index()
-)
-
-
-energy_intensity["energy_intensity"] = (
-    energy_intensity["electricity"]
-    /
-    energy_intensity["sqm"]
-)
-
-
-energy_intensity.head()
-
-inefficient_buildings = (
-    energy_intensity
-    .sort_values(
-        "energy_intensity",
-        ascending=False
-    )
-    .head(20)
-)
-
-
-inefficient_buildings
-
-print("="*70)
-print("ENERGY INTELLIGENCE SUMMARY")
-print("="*70)
-
-
-print(
-    "Total Electricity:",
-    f"{df['electricity'].sum():,.2f}"
-)
-
-
-print(
-    "Highest Energy Campus:",
-    campus_energy.iloc[0]["campus"]
-)
-
-
-print(
-    "Highest Energy Building Type:",
-    building_type_energy.iloc[0]["building_type"]
-)
-
-
-print(
-    "Buildings Analyzed:",
-    df["building_id"].nunique()
-)
-
-
-print(
-    "Campuses Analyzed:",
-    df["campus"].nunique()
-)
-
-
-print("="*70)
+building_type_energy = df.groupby("building_type")["electricity"].mean().sort_values(ascending=False).reset_index()
+building_type_energy.columns = ["building_type", "average_energy"]
+fig_btype = px.bar(building_type_energy, x="building_type", y="average_energy", color="average_energy", title="Average Energy Consumption by Building Type")
+fig_btype.update_layout(xaxis_tickangle=-45)
+fig_btype.show()
 
 # ============================================================
-# WEATHER FEATURE ANALYSIS
+# 3. WEATHER FEATURE ANALYSIS
 # ============================================================
 
 weather_features = [
-    "airTemperature",
-    "dewTemperature",
-    "windSpeed",
-    "windDirection",
-    "cloudCoverage",
-    "precipDepth1HR",
-    "precipDepth6HR",
-    "heating_degree_days",
-    "cooling_degree_days"
+    "airTemperature", "dewTemperature", "windSpeed", "windDirection",
+    "cloudCoverage", "precipDepth1HR", "precipDepth6HR",
+    "heating_degree_days", "cooling_degree_days"
 ]
+available_weather = [col for col in weather_features if col in df.columns]
 
+weather_energy_corr = df[available_weather + ["electricity"]].corr()
 
-available_weather = [
-    col for col in weather_features
-    if col in df.columns
-]
-
-
-print("Available Weather Features:")
-print(available_weather)
-
-weather_energy_corr = (
-    df[
-        available_weather +
-        ["electricity"]
-    ]
-    .corr()
-)
-
-
-weather_energy_corr["electricity"]\
-.sort_values(
-    ascending=False
-)
-
-plt.figure(figsize=(12,8))
-
-
-sns.heatmap(
-    weather_energy_corr,
-    annot=True,
-    cmap="coolwarm",
-    center=0
-)
-
-
-plt.title(
-    "Weather Features vs Electricity Correlation"
-)
-
-
+plt.figure(figsize=(12, 8))
+sns.heatmap(weather_energy_corr, annot=True, cmap="coolwarm", center=0)
+plt.title("Weather Features vs Electricity Correlation")
 plt.show()
 
-temperature_energy = (
-    df
-    .groupby("airTemperature")
-    ["electricity"]
-    .mean()
-    .reset_index()
-)
+# Temperature Impact Plots
+temp_energy = df.groupby("airTemperature")["electricity"].mean().reset_index()
+fig_temp = px.scatter(temp_energy, x="airTemperature", y="electricity", trendline="lowess", title="Temperature Impact on Electricity Consumption", template="plotly_white")
+fig_temp.show()
 
+cdd_energy = df.groupby("cooling_degree_days")["electricity"].mean().reset_index()
+fig_cdd = px.scatter(cdd_energy, x="cooling_degree_days", y="electricity", title="Cooling Degree Days vs Electricity Consumption", template="plotly_white")
+fig_cdd.show()
 
-temperature_energy.head()
-
-fig = px.scatter(
-    temperature_energy,
-    x="airTemperature",
-    y="electricity",
-    trendline="lowess",
-    title="Temperature Impact on Electricity Consumption",
-    template="plotly_white"
-)
-
-
-fig.show()
-
-cdd_energy = (
-    df
-    .groupby("cooling_degree_days")
-    ["electricity"]
-    .mean()
-    .reset_index()
-)
-
-
-cdd_energy.head()
-
-fig = px.scatter(
-    cdd_energy,
-    x="cooling_degree_days",
-    y="electricity",
-    title="Cooling Degree Days vs Electricity Consumption",
-    template="plotly_white"
-)
-
-
-fig.show()
-
-hdd_energy = (
-    df
-    .groupby("heating_degree_days")
-    ["electricity"]
-    .mean()
-    .reset_index()
-)
-
-
-hdd_energy.head()
-
-fig = px.scatter(
-    hdd_energy,
-    x="heating_degree_days",
-    y="electricity",
-    title="Heating Degree Days vs Electricity Consumption",
-    template="plotly_white"
-)
-
-
-fig.show()
-
-weather_corr = (
-    weather_energy_corr["electricity"]
-    .drop("electricity")
-    .sort_values(
-        key=abs,
-        ascending=False
-    )
-)
-
-
-print("="*70)
-print("TOP WEATHER DRIVERS OF ELECTRICITY CONSUMPTION")
-print("="*70)
-
-
-display(weather_corr)
-
-print("="*70)
-
-building_efficiency = (
-    df
-    .groupby(
-        [
-            "building_id",
-            "building_name",
-            "building_type",
-            "sqm"
-        ]
-    )
-    ["electricity"]
-    .sum()
-    .reset_index()
-)
-
-
-building_efficiency["energy_intensity"] = (
-    building_efficiency["electricity"]
-    /
-    building_efficiency["sqm"]
-)
-
-
-building_efficiency.head()
-
-efficient_buildings = (
-    building_efficiency
-    .sort_values(
-        "energy_intensity"
-    )
-    .head(20)
-)
-
-
-efficient_buildings
-
-inefficient_buildings = (
-    building_efficiency
-    .sort_values(
-        "energy_intensity",
-        ascending=False
-    )
-    .head(20)
-)
-
-
-inefficient_buildings
-
-sustainability_df = building_efficiency.copy()
-
-
-sustainability_df["sustainability_score"] = (
-    100 -
-    (
-        (
-            sustainability_df["energy_intensity"]
-            -
-            sustainability_df["energy_intensity"].min()
-        )
-        /
-        (
-            sustainability_df["energy_intensity"].max()
-            -
-            sustainability_df["energy_intensity"].min()
-        )
-    )
-    *
-    100
-)
-
-
-sustainability_df.head()
-
-sustainability_ranking = (
-    sustainability_df
-    .sort_values(
-        "sustainability_score",
-        ascending=False
-    )
-)
-
-
-sustainability_ranking[
-    [
-        "building_name",
-        "building_type",
-        "energy_intensity",
-        "sustainability_score"
-    ]
-].head(20)
-
-print("="*75)
-print("PHASE-04 SUSTAINABILITY INTELLIGENCE SUMMARY")
-print("="*75)
-
-
-print(
-    "Buildings Evaluated:",
-    sustainability_df["building_id"].nunique()
-)
-
-
-print(
-    "Weather Variables Used:",
-    len(available_weather)
-)
-
-
-print(
-    "Best Sustainability Score:",
-    round(
-        sustainability_df["sustainability_score"].max(),
-        2
-    )
-)
-
-
-print(
-    "Average Sustainability Score:",
-    round(
-        sustainability_df["sustainability_score"].mean(),
-        2
-    )
-)
-
-
-print("="*75)
+hdd_energy = df.groupby("heating_degree_days")["electricity"].mean().reset_index()
+fig_hdd = px.scatter(hdd_energy, x="heating_degree_days", y="electricity", title="Heating Degree Days vs Electricity Consumption", template="plotly_white")
+fig_hdd.show()
 
 # ============================================================
-# BUILDING PERFORMANCE INTELLIGENCE TABLE
+# 4. BUILDING PERFORMANCE & SUSTAINABILITY SCORING
 # ============================================================
 
 building_performance = (
-    df
-    .groupby(
-        [
-            "building_id",
-            "building_name",
-            "building_type",
-            "campus",
-            "sqm",
-            "occupants"
-        ]
+    df.groupby(
+        ["building_id", "building_name", "building_type", "campus", "sqm", "occupants"]
     )
     .agg(
-        total_electricity=("electricity","sum"),
-        average_temperature=("airTemperature","mean"),
-        total_solar=("solar","sum"),
-        total_water=("water","sum")
+        total_electricity=("electricity", "sum"),
+        average_temperature=("airTemperature", "mean"),
+        total_solar=("solar", "sum") if "solar" in df.columns else ("electricity", "sum"),
+        total_water=("water", "sum") if "water" in df.columns else ("electricity", "sum")
     )
     .reset_index()
 )
-
-
-building_performance.head()
 
 building_performance["energy_intensity"] = (
-    building_performance["total_electricity"]
-    /
-    building_performance["sqm"]
+    building_performance["total_electricity"] / building_performance["sqm"]
 )
 
-
-building_performance.head()
-
-# Normalize energy intensity
-
-min_intensity = (
-    building_performance["energy_intensity"].min()
-)
-
-max_intensity = (
-    building_performance["energy_intensity"].max()
-)
-
+min_intensity = building_performance["energy_intensity"].min()
+max_intensity = building_performance["energy_intensity"].max()
 
 building_performance["sustainability_score"] = (
-    100 -
-    (
-        (
-            building_performance["energy_intensity"]
-            -
-            min_intensity
-        )
-        /
-        (
-            max_intensity -
-            min_intensity
-        )
-    )
-    *
-    100
+    100 - ((building_performance["energy_intensity"] - min_intensity) / (max_intensity - min_intensity)) * 100
 )
 
-
-sustainability_ranking = (
-    building_performance
-    .sort_values(
-        "sustainability_score",
-        ascending=False
-    )
-)
-
-
-sustainability_ranking.head(10)
-
-high_energy_risk = (
-    building_performance
-    .sort_values(
-        "energy_intensity",
-        ascending=False
-    )
-    .head(20)
-)
-
-
-high_energy_risk[
-    [
-        "building_name",
-        "building_type",
-        "campus",
-        "energy_intensity"
-    ]
-]
+sustainability_ranking = building_performance.sort_values("sustainability_score", ascending=False)
 
 campus_sustainability = (
-    building_performance
-    .groupby("campus")
+    building_performance.groupby("campus")
     .agg(
-        total_energy=("total_electricity","sum"),
-        avg_energy_intensity=("energy_intensity","mean"),
-        avg_sustainability_score=("sustainability_score","mean")
+        total_energy=("total_electricity", "sum"),
+        avg_energy_intensity=("energy_intensity", "mean"),
+        avg_sustainability_score=("sustainability_score", "mean")
     )
     .reset_index()
+    .sort_values("avg_sustainability_score", ascending=False)
 )
 
-
-campus_sustainability = (
-    campus_sustainability
-    .sort_values(
-        "avg_sustainability_score",
-        ascending=False
-    )
-)
-
-
-campus_sustainability
-
-fig = px.bar(
+fig_cs = px.bar(
     campus_sustainability,
     x="campus",
     y="avg_sustainability_score",
@@ -961,52 +184,17 @@ fig = px.bar(
     title="Campus Sustainability Ranking",
     template="plotly_white"
 )
+fig_cs.show()
 
-fig.show()
+# ============================================================
+# 5. EXPORT EDA OUTPUTS
+# ============================================================
 
-fig = px.scatter(
-    building_performance,
-    x="total_electricity",
-    y="sustainability_score",
-    color="building_type",
-    hover_name="building_name",
-    title="Energy Consumption vs Sustainability Score",
-    template="plotly_white"
-)
+OUTPUT_PATH = os.path.join(PROCESSED_PATH, "eda_outputs")
+os.makedirs(OUTPUT_PATH, exist_ok=True)
 
-fig.show()
+building_performance.to_parquet(os.path.join(OUTPUT_PATH, "building_performance.parquet"))
+campus_sustainability.to_parquet(os.path.join(OUTPUT_PATH, "campus_sustainability.parquet"))
+sustainability_ranking.to_parquet(os.path.join(OUTPUT_PATH, "sustainability_ranking.parquet"))
 
-import os
-
-
-OUTPUT_PATH = (
-    "/content/drive/MyDrive/"
-    "GitHub_Project_01/"
-    "processed/"
-    "eda_outputs"
-)
-
-
-os.makedirs(
-    OUTPUT_PATH,
-    exist_ok=True
-)
-
-
-building_performance.to_parquet(
-    f"{OUTPUT_PATH}/building_performance.parquet"
-)
-
-
-campus_sustainability.to_parquet(
-    f"{OUTPUT_PATH}/campus_sustainability.parquet"
-)
-
-
-sustainability_ranking.to_parquet(
-    f"{OUTPUT_PATH}/sustainability_ranking.parquet"
-)
-
-
-print("EDA outputs exported successfully")
-
+print("✅ EDA outputs exported successfully to:", OUTPUT_PATH)
