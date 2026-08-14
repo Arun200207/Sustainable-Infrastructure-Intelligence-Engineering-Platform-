@@ -1,2408 +1,275 @@
-from google.colab import drive
+"""
+Phase-13 Core Validation Engine.
+Handles KPI checks, recursive searching, artifact verification, and syntax validation.
+"""
 
-drive.mount("/content/drive")
-from pathlib import Path
-
-PROJECT_ROOT = Path("/content/drive/MyDrive/GitHub_Project_01")
-
-print("Project root:")
-print(PROJECT_ROOT)
-
-print("\nExists:", PROJECT_ROOT.exists())
-print("Is directory:", PROJECT_ROOT.is_dir())
-
-if not PROJECT_ROOT.exists():
-    raise FileNotFoundError(
-        f"AUTHORITATIVE PROJECT ROOT NOT FOUND:\n{PROJECT_ROOT}"
-    )
-
-print("\nPASS — authoritative project root verified.")
-from pathlib import Path
-
-print("PROJECT INVENTORY")
-print("=" * 80)
-
-for path in sorted(PROJECT_ROOT.rglob("*")):
-    if path.is_file():
-        relative = path.relative_to(PROJECT_ROOT)
-        print(relative)
-
-required_artifacts = {
-    "phase09_kpi":
-        PROJECT_ROOT / "reports/sustainability/phase09_carbon_cost_kpis.json",
-
-    "phase09_building_intelligence":
-        PROJECT_ROOT / "processed/sustainability/carbon_cost_building_intelligence.parquet",
-
-    "phase09_carbon_ranking":
-        PROJECT_ROOT / "processed/sustainability/carbon/carbon_building_ranking.parquet",
-
-    "phase09_cost_ranking":
-        PROJECT_ROOT / "processed/sustainability/cost/cost_building_ranking.parquet",
-
-    "phase10_knowledge_base":
-        PROJECT_ROOT / "processed/phase10_rag/knowledge_base/sustainability_knowledge.json",
-
-    "phase11_xai_dataset":
-        PROJECT_ROOT / "processed/phase11_xai/xai_test_feature_dataset.parquet",
-
-    "phase11_xai_report":
-        PROJECT_ROOT / "reports/phase11_xai/phase11_xai_report.json",
-
-    "phase12_report":
-        PROJECT_ROOT / "reports/phase12_reporting/phase12_sustainability_report.json",
-
-    "phase12_markdown":
-        PROJECT_ROOT / "reports/phase12_reporting/phase12_sustainability_report.md",
-
-    "phase12_building_reports":
-        PROJECT_ROOT / "reports/phase12_reporting/building_reports",
-}
-
-print("PHASE-13 ARTIFACT CONTRACT")
-print("=" * 80)
-
-artifact_status = {}
-
-for name, path in required_artifacts.items():
-    exists = path.exists()
-    artifact_status[name] = exists
-
-    status = "PASS" if exists else "FAIL"
-
-    print(f"{status:5} | {name}")
-    print(f"       {path}")
-
-if not all(artifact_status.values()):
-    missing = [
-        name for name, exists in artifact_status.items()
-        if not exists
-    ]
-
-    raise FileNotFoundError(
-        "Required Phase-13 artifacts are missing:\n"
-        + "\n".join(missing)
-    )
-
-print("\nPASS — all required Phase-13 source artifacts exist.")
-
-
-import pandas as pd
-
-building_path = required_artifacts["phase09_building_intelligence"]
-
-building_df = pd.read_parquet(building_path)
-
-print("Building intelligence shape:")
-print(building_df.shape)
-
-print("\nColumns:")
-for i, col in enumerate(building_df.columns, start=1):
-    print(f"{i:02d}. {col}")
-
-import json
-
-with open(required_artifacts["phase09_kpi"], "r") as f:
-    phase09_kpis = json.load(f)
-
-print(json.dumps(phase09_kpis, indent=2))
-
-with open(required_artifacts["phase10_knowledge_base"], "r") as f:
-    knowledge_base = json.load(f)
-
-print("Knowledge base type:", type(knowledge_base))
-
-if isinstance(knowledge_base, list):
-    print("Knowledge records:", len(knowledge_base))
-
-    if len(knowledge_base) > 0:
-        print("\nFirst record:")
-        print(json.dumps(knowledge_base[0], indent=2)[:3000])
-
-elif isinstance(knowledge_base, dict):
-    print("Knowledge base keys:")
-    print(list(knowledge_base.keys()))
-xai_df = pd.read_parquet(required_artifacts["phase11_xai_dataset"])
-
-print("XAI dataset shape:")
-print(xai_df.shape)
-
-print("\nXAI columns:")
-print(list(xai_df.columns))
-
-with open(required_artifacts["phase11_xai_report"], "r") as f:
-    xai_report = json.load(f)
-
-print(json.dumps(xai_report, indent=2)[:10000])
-
-!pip -q install streamlit plotly pyarrow
-APP_DIR = PROJECT_ROOT / "app"
-PHASE13_REPORT_DIR = PROJECT_ROOT / "reports/phase13_dashboard"
-
-APP_DIR.mkdir(parents=True, exist_ok=True)
-PHASE13_REPORT_DIR.mkdir(parents=True, exist_ok=True)
-
-print("APP_DIR:", APP_DIR)
-print("PHASE13_REPORT_DIR:", PHASE13_REPORT_DIR)
-
-print("\nPASS — Phase-13 directories ready.")
-dashboard_code = r'''
-import json
-from pathlib import Path
-
-import pandas as pd
-import plotly.express as px
-import streamlit as st
-
-
-# ============================================================
-# PROJECT CONFIGURATION
-# ============================================================
-
-PROJECT_ROOT = Path("/content/drive/MyDrive/GitHub_Project_01")
-
-KPI_PATH = (
-    PROJECT_ROOT
-    / "reports/sustainability/phase09_carbon_cost_kpis.json"
-)
-
-BUILDING_PATH = (
-    PROJECT_ROOT
-    / "processed/sustainability/carbon_cost_building_intelligence.parquet"
-)
-
-CARBON_RANK_PATH = (
-    PROJECT_ROOT
-    / "processed/sustainability/carbon/carbon_building_ranking.parquet"
-)
-
-COST_RANK_PATH = (
-    PROJECT_ROOT
-    / "processed/sustainability/cost/cost_building_ranking.parquet"
-)
-
-KB_PATH = (
-    PROJECT_ROOT
-    / "processed/phase10_rag/knowledge_base/sustainability_knowledge.json"
-)
-
-XAI_DATASET_PATH = (
-    PROJECT_ROOT
-    / "processed/phase11_xai/xai_test_feature_dataset.parquet"
-)
-
-XAI_REPORT_PATH = (
-    PROJECT_ROOT
-    / "reports/phase11_xai/phase11_xai_report.json"
-)
-
-REPORT_JSON_PATH = (
-    PROJECT_ROOT
-    / "reports/phase12_reporting/phase12_sustainability_report.json"
-)
-
-REPORT_MD_PATH = (
-    PROJECT_ROOT
-    / "reports/phase12_reporting/phase12_sustainability_report.md"
-)
-
-
-# ============================================================
-# PAGE CONFIG
-# ============================================================
-
-st.set_page_config(
-    page_title="Sustainable Infrastructure Intelligence",
-    page_icon="🌍",
-    layout="wide",
-)
-
-
-# ============================================================
-# LOADERS
-# ============================================================
-
-@st.cache_data
-def load_kpis():
-    with open(KPI_PATH, "r") as f:
-        return json.load(f)
-
-
-@st.cache_data
-def load_building_data():
-    return pd.read_parquet(BUILDING_PATH)
-
-
-@st.cache_data
-def load_carbon_ranking():
-    return pd.read_parquet(CARBON_RANK_PATH)
-
-
-@st.cache_data
-def load_cost_ranking():
-    return pd.read_parquet(COST_RANK_PATH)
-
-
-@st.cache_data
-def load_knowledge_base():
-    with open(KB_PATH, "r") as f:
-        return json.load(f)
-
-
-@st.cache_data
-def load_xai_dataset():
-    return pd.read_parquet(XAI_DATASET_PATH)
-
-
-@st.cache_data
-def load_xai_report():
-    with open(XAI_REPORT_PATH, "r") as f:
-        return json.load(f)
-
-
-@st.cache_data
-def load_phase12_report():
-    with open(REPORT_JSON_PATH, "r") as f:
-        return json.load(f)
-
-
-# ============================================================
-# SAFE HELPERS
-# ============================================================
-
-def find_column(df, candidates):
-    """
-    Find the first matching column from a list of possible names.
-    """
-    lower_map = {str(c).lower(): c for c in df.columns}
-
-    for candidate in candidates:
-        if candidate.lower() in lower_map:
-            return lower_map[candidate.lower()]
-
-    return None
-
-
-def format_number(value, decimals=2):
-    try:
-        return f"{float(value):,.{decimals}f}"
-    except Exception:
-        return "N/A"
-
-
-def format_currency(value):
-    try:
-        return f"${float(value):,.2f}"
-    except Exception:
-        return "N/A"
-
-
-# ============================================================
-# LOAD DATA
-# ============================================================
-
-try:
-    kpis = load_kpis()
-    buildings = load_building_data()
-    carbon_ranking = load_carbon_ranking()
-    cost_ranking = load_cost_ranking()
-    knowledge_base = load_knowledge_base()
-    xai_df = load_xai_dataset()
-    xai_report = load_xai_report()
-    phase12_report = load_phase12_report()
-
-except Exception as exc:
-    st.error(f"Unable to load validated project artifacts: {exc}")
-    st.stop()
-
-
-# ============================================================
-# HEADER
-# ============================================================
-
-st.title("🌍 Sustainable Infrastructure Intelligence Platform")
-
-st.markdown(
-    """
-    **AI-powered infrastructure intelligence for energy, carbon, cost,
-    forecasting, sustainability and explainability.**
-    """
-)
-
-st.caption(
-    "Dashboard backed by validated Phase-09, Phase-10, Phase-11 and "
-    "Phase-12 project artifacts."
-)
-
-
-# ============================================================
-# SIDEBAR
-# ============================================================
-
-st.sidebar.title("Navigation")
-
-section = st.sidebar.radio(
-    "Select section",
-    [
-        "Overview",
-        "Building Intelligence",
-        "Energy / Carbon / Cost",
-        "Forecasting & XAI",
-        "Sustainability Assistant",
-        "Reports",
-    ],
-)
-
-
-# ============================================================
-# OVERVIEW
-# ============================================================
-
-if section == "Overview":
-
-    st.header("Global Sustainability Overview")
-
-    buildings_count = kpis.get("buildings")
-    daily_records = kpis.get("daily_records")
-
-    total_energy = kpis.get("total_energy_kwh")
-    net_carbon = kpis.get("net_carbon_tco2e")
-    net_cost = kpis.get("net_energy_cost_usd")
-
-    carbon_score = kpis.get("average_carbon_score")
-    cost_score = kpis.get("average_cost_score")
-
-    combined_score = None
-
-    try:
-        combined_score = (
-            0.60 * float(carbon_score)
-            + 0.40 * float(cost_score)
-        )
-    except Exception:
-        pass
-
-    c1, c2, c3, c4 = st.columns(4)
-
-    c1.metric(
-        "Buildings",
-        format_number(buildings_count, 0)
-    )
-
-    c2.metric(
-        "Daily Records",
-        format_number(daily_records, 0)
-    )
-
-    c3.metric(
-        "Total Energy",
-        f"{float(total_energy) / 1e9:,.3f} B kWh"
-    )
-
-    c4.metric(
-        "Net Carbon",
-        f"{float(net_carbon) / 1e6:,.3f} M tCO₂e"
-    )
-
-    c5, c6, c7 = st.columns(3)
-
-    c5.metric(
-        "Net Energy Cost",
-        format_currency(net_cost)
-    )
-
-    c6.metric(
-        "Average Carbon Score",
-        format_number(carbon_score, 6)
-    )
-
-    c7.metric(
-        "Combined Sustainability Score",
-        format_number(combined_score, 6)
-        if combined_score is not None
-        else "N/A"
-    )
-
-    st.divider()
-
-    st.subheader("Platform Coverage")
-
-    coverage_df = pd.DataFrame(
-        {
-            "Metric": [
-                "Buildings",
-                "Daily records",
-                "Knowledge records",
-                "XAI test predictions",
-            ],
-            "Value": [
-                buildings_count,
-                daily_records,
-                len(knowledge_base)
-                if isinstance(knowledge_base, list)
-                else "N/A",
-                len(xai_df),
-            ],
-        }
-    )
-
-    st.dataframe(
-        coverage_df,
-        use_container_width=True,
-        hide_index=True,
-    )
-
-
-# ============================================================
-# BUILDING INTELLIGENCE
-# ============================================================
-
-elif section == "Building Intelligence":
-
-    st.header("🏢 Building Intelligence")
-
-    df = buildings.copy()
-
-    st.write(
-        f"Validated building-level records: **{len(df):,}**"
-    )
-
-    building_id_col = find_column(
-        df,
-        ["building_id", "building", "id"]
-    )
-
-    building_name_col = find_column(
-        df,
-        ["building_name", "name"]
-    )
-
-    building_type_col = find_column(
-        df,
-        ["building_type", "primaryspaceusage"]
-    )
-
-    campus_col = find_column(
-        df,
-        ["campus"]
-    )
-
-    score_col = find_column(
-        df,
-        [
-            "overall_score",
-            "sustainability_score",
-            "combined_score",
-            "score",
-        ]
-    )
-
-    carbon_col = find_column(
-        df,
-        [
-            "carbon_score",
-            "avg_carbon_score",
-        ]
-    )
-
-    cost_col = find_column(
-        df,
-        [
-            "cost_score",
-            "avg_cost_score",
-        ]
-    )
-
-    # Filters
-    f1, f2, f3 = st.columns(3)
-
-    search_text = f1.text_input(
-        "Search building",
-        ""
-    )
-
-    if building_type_col:
-        types = sorted(
-            df[building_type_col]
-            .dropna()
-            .astype(str)
-            .unique()
-            .tolist()
-        )
-
-        selected_type = f2.selectbox(
-            "Building type",
-            ["All"] + types
-        )
-
-        if selected_type != "All":
-            df = df[
-                df[building_type_col].astype(str)
-                == selected_type
-            ]
-
-    if campus_col:
-        campuses = sorted(
-            df[campus_col]
-            .dropna()
-            .astype(str)
-            .unique()
-            .tolist()
-        )
-
-        selected_campus = f3.selectbox(
-            "Campus",
-            ["All"] + campuses
-        )
-
-        if selected_campus != "All":
-            df = df[
-                df[campus_col].astype(str)
-                == selected_campus
-            ]
-
-    if search_text and building_id_col:
-        mask = (
-            df[building_id_col]
-            .astype(str)
-            .str.contains(
-                search_text,
-                case=False,
-                na=False
-            )
-        )
-
-        if building_name_col:
-            mask = (
-                mask
-                | df[building_name_col]
-                .astype(str)
-                .str.contains(
-                    search_text,
-                    case=False,
-                    na=False
-                )
-            )
-
-        df = df[mask]
-
-    st.write(f"Filtered buildings: **{len(df):,}**")
-
-    display_columns = []
-
-    for col in [
-        building_id_col,
-        building_name_col,
-        building_type_col,
-        campus_col,
-        carbon_col,
-        cost_col,
-        score_col,
-    ]:
-        if col and col not in display_columns:
-            display_columns.append(col)
-
-    if display_columns:
-        st.dataframe(
-            df[display_columns],
-            use_container_width=True,
-            hide_index=True,
-        )
-    else:
-        st.dataframe(
-            df,
-            use_container_width=True,
-            hide_index=True,
-        )
-
-
-# ============================================================
-# ENERGY / CARBON / COST
-# ============================================================
-
-elif section == "Energy / Carbon / Cost":
-
-    st.header("⚡ Energy, Carbon & Cost Intelligence")
-
-    df = buildings.copy()
-
-    energy_col = find_column(
-        df,
-        [
-            "electricity",
-            "total_energy",
-            "energy",
-            "total_energy_kwh",
-        ]
-    )
-
-    carbon_col = find_column(
-        df,
-        [
-            "net_carbon",
-            "net_carbon_tco2e",
-            "carbon",
-        ]
-    )
-
-    cost_col = find_column(
-        df,
-        [
-            "net_energy_cost",
-            "net_energy_cost_usd",
-            "net_cost",
-            "cost",
-        ]
-    )
-
-    building_col = find_column(
-        df,
-        [
-            "building_id",
-            "building_name",
-            "building",
-        ]
-    )
-
-    if energy_col and building_col:
-
-        plot_df = df[
-            [building_col, energy_col]
-        ].copy()
-
-        plot_df = (
-            plot_df
-            .sort_values(energy_col, ascending=False)
-            .head(20)
-        )
-
-        fig = px.bar(
-            plot_df,
-            x=building_col,
-            y=energy_col,
-            title="Top 20 Buildings by Energy",
-            labels={
-                building_col: "Building",
-                energy_col: "Energy",
-            },
-        )
-
-        fig.update_layout(
-            xaxis_tickangle=-45
-        )
-
-        st.plotly_chart(
-            fig,
-            use_container_width=True
-        )
-
-    if carbon_col and building_col:
-
-        plot_df = df[
-            [building_col, carbon_col]
-        ].copy()
-
-        plot_df = (
-            plot_df
-            .sort_values(carbon_col, ascending=False)
-            .head(20)
-        )
-
-        fig = px.bar(
-            plot_df,
-            x=building_col,
-            y=carbon_col,
-            title="Top 20 Buildings by Carbon",
-            labels={
-                building_col: "Building",
-                carbon_col: "Carbon",
-            },
-        )
-
-        fig.update_layout(
-            xaxis_tickangle=-45
-        )
-
-        st.plotly_chart(
-            fig,
-            use_container_width=True
-        )
-
-    if cost_col and building_col:
-
-        plot_df = df[
-            [building_col, cost_col]
-        ].copy()
-
-        plot_df = (
-            plot_df
-            .sort_values(cost_col, ascending=False)
-            .head(20)
-        )
-
-        fig = px.bar(
-            plot_df,
-            x=building_col,
-            y=cost_col,
-            title="Top 20 Buildings by Energy Cost",
-            labels={
-                building_col: "Building",
-                cost_col: "Cost",
-            },
-        )
-
-        fig.update_layout(
-            xaxis_tickangle=-45
-        )
-
-        st.plotly_chart(
-            fig,
-            use_container_width=True
-        )
-
-    if not any(
-        [energy_col, carbon_col, cost_col]
-    ):
-        st.warning(
-            "No compatible energy/carbon/cost columns were found "
-            "in the validated building artifact."
-        )
-
-
-# ============================================================
-# FORECASTING & XAI
-# ============================================================
-
-elif section == "Forecasting & XAI":
-
-    st.header("📈 Forecasting & Explainable AI")
-
-    model_name = xai_report.get(
-        "model",
-        "XGBRegressor"
-    )
-
-    test_predictions = len(xai_df)
-
-    st.subheader("Forecasting Model")
-
-    c1, c2, c3, c4 = st.columns(4)
-
-    c1.metric(
-        "Model",
-        model_name
-    )
-
-    c2.metric(
-        "Test Predictions",
-        format_number(test_predictions, 0)
-    )
-
-    mae = xai_report.get("mae")
-    rmse = xai_report.get("rmse")
-    r2 = xai_report.get("r2")
-
-    c3.metric(
-        "MAE",
-        format_number(mae, 2)
-    )
-
-    c4.metric(
-        "R²",
-        format_number(r2, 4)
-    )
-
-    st.metric(
-        "RMSE",
-        format_number(rmse, 2)
-    )
-
-    st.divider()
-
-    st.subheader("Actual vs Model Prediction")
-
-    actual_col = find_column(
-        xai_df,
-        [
-            "actual_target_energy",
-            "actual",
-            "target_energy",
-        ]
-    )
-
-    prediction_col = find_column(
-        xai_df,
-        [
-            "model_prediction",
-            "prediction",
-        ]
-    )
-
-    datetime_col = find_column(
-        xai_df,
-        ["datetime", "date"]
-    )
-
-    if actual_col and prediction_col:
-
-        chart_df = xai_df.copy()
-
-        if datetime_col:
-            chart_df[datetime_col] = pd.to_datetime(
-                chart_df[datetime_col],
-                errors="coerce"
-            )
-
-            chart_df = chart_df.sort_values(
-                datetime_col
-            )
-
-            fig = px.line(
-                chart_df,
-                x=datetime_col,
-                y=[
-                    actual_col,
-                    prediction_col
-                ],
-                title="Actual vs Predicted Energy",
-            )
-
-        else:
-            fig = px.line(
-                chart_df,
-                y=[
-                    actual_col,
-                    prediction_col
-                ],
-                title="Actual vs Predicted Energy",
-            )
-
-        st.plotly_chart(
-            fig,
-            use_container_width=True
-        )
-
-    st.divider()
-
-    st.subheader("Feature Importance")
-
-    importance = xai_report.get(
-        "shap_importance",
-        xai_report.get(
-            "global_shap_importance",
-            {}
-        )
-    )
-
-    if isinstance(importance, dict) and importance:
-
-        importance_df = pd.DataFrame(
-            list(importance.items()),
-            columns=[
-                "Feature",
-                "Mean Absolute SHAP"
-            ],
-        )
-
-        importance_df = (
-            importance_df
-            .sort_values(
-                "Mean Absolute SHAP",
-                ascending=False
-            )
-            .head(13)
-        )
-
-        fig = px.bar(
-            importance_df,
-            x="Mean Absolute SHAP",
-            y="Feature",
-            orientation="h",
-            title="Global SHAP Feature Importance",
-        )
-
-        fig.update_layout(
-            yaxis={"categoryorder": "total ascending"}
-        )
-
-        st.plotly_chart(
-            fig,
-            use_container_width=True
-        )
-
-    else:
-        st.info(
-            "The Phase-11 report does not expose SHAP importance "
-            "in a directly plottable dictionary."
-        )
-
-
-# ============================================================
-# SUSTAINABILITY ASSISTANT
-# ============================================================
-
-elif section == "Sustainability Assistant":
-
-    st.header("🤖 Sustainability Assistant")
-
-    st.caption(
-        "Grounded using the validated Phase-10 knowledge base. "
-        "This dashboard does not rebuild the vector store."
-    )
-
-    question = st.text_input(
-        "Ask a sustainability question",
-        placeholder=(
-            "Example: Which building has the highest carbon score?"
-        ),
-    )
-
-    if question:
-
-        # Lightweight artifact-backed retrieval.
-        # This intentionally does NOT regenerate embeddings or FAISS.
-        records = (
-            knowledge_base
-            if isinstance(knowledge_base, list)
-            else []
-        )
-
-        query_words = set(
-            question.lower().split()
-        )
-
-        scored_records = []
-
-        for record in records:
-
-            text = json.dumps(
-                record,
-                default=str
-            ).lower()
-
-            score = sum(
-                1
-                for word in query_words
-                if len(word) > 2 and word in text
-            )
-
-            if score > 0:
-                scored_records.append(
-                    (score, record)
-                )
-
-        scored_records.sort(
-            key=lambda x: x[0],
-            reverse=True
-        )
-
-        top_records = [
-            record
-            for _, record
-            in scored_records[:3]
-        ]
-
-        if top_records:
-
-            st.subheader("Grounded Results")
-
-            for i, record in enumerate(
-                top_records,
-                start=1
-            ):
-                st.markdown(
-                    f"**Source record {i}**"
-                )
-
-                st.json(record)
-
-        else:
-
-            st.info(
-                "No directly matching knowledge-base records "
-                "were found. Try using terms such as building, "
-                "energy, carbon, cost, score, or sustainability."
-            )
-
-
-# ============================================================
-# REPORTS
-# ============================================================
-
-elif section == "Reports":
-
-    st.header("📄 Sustainability Reports")
-
-    st.success(
-        "Phase-12 reporting artifacts are available."
-    )
-
-    if REPORT_JSON_PATH.exists():
-
-        with open(
-            REPORT_JSON_PATH,
-            "r"
-        ) as f:
-            report_json = f.read()
-
-        st.download_button(
-            label="Download Sustainability Report JSON",
-            data=report_json,
-            file_name="phase12_sustainability_report.json",
-            mime="application/json",
-        )
-
-    if REPORT_MD_PATH.exists():
-
-        with open(
-            REPORT_MD_PATH,
-            "r"
-        ) as f:
-            report_md = f.read()
-
-        st.download_button(
-            label="Download Sustainability Report Markdown",
-            data=report_md,
-            file_name="phase12_sustainability_report.md",
-            mime="text/markdown",
-        )
-
-        st.subheader("Report Preview")
-
-        st.markdown(
-            report_md[:15000]
-        )
-
-    building_reports_dir = (
-        PROJECT_ROOT
-        / "reports/phase12_reporting/building_reports"
-    )
-
-    if building_reports_dir.exists():
-
-        report_count = len(
-            list(
-                building_reports_dir.glob("*")
-            )
-        )
-
-        st.metric(
-            "Building Reports",
-            report_count
-        )
-
-        st.caption(
-            "Building-level reports are available in the "
-            "Phase-12 artifact directory."
-        )
-
-
-# ============================================================
-# FOOTER
-# ============================================================
-
-st.divider()
-
-st.caption(
-    "Sustainable Infrastructure Intelligence Platform | "
-    "Phase-13 Dashboard | Artifact-backed architecture"
-)
-'''
-
-dashboard_path = APP_DIR / "streamlit_app.py"
-
-dashboard_path.write_text(
-    dashboard_code,
-    encoding="utf-8"
-)
-
-print("Dashboard created:")
-print(dashboard_path)
-
-print("\nSize:")
-print(f"{dashboard_path.stat().st_size:,} bytes")
-import py_compile
-
-py_compile.compile(
-    str(dashboard_path),
-    doraise=True
-)
-
-print("PASS — Streamlit dashboard syntax validation passed.")
-
-print(dashboard_path.read_text(encoding="utf-8")[:5000])
-phase13_validation_code = r'''
-import json
-from pathlib import Path
-
-import pandas as pd
-
-
-PROJECT_ROOT = Path("/content/drive/MyDrive/GitHub_Project_01")
-
-REPORT_DIR = (
-    PROJECT_ROOT
-    / "reports/phase13_dashboard"
-)
-
-REPORT_DIR.mkdir(
-    parents=True,
-    exist_ok=True
-)
-
-
-artifacts = {
-    "phase09_kpi":
-        PROJECT_ROOT
-        / "reports/sustainability/phase09_carbon_cost_kpis.json",
-
-    "phase09_building_intelligence":
-        PROJECT_ROOT
-        / "processed/sustainability/carbon_cost_building_intelligence.parquet",
-
-    "phase09_carbon_ranking":
-        PROJECT_ROOT
-        / "processed/sustainability/carbon/carbon_building_ranking.parquet",
-
-    "phase09_cost_ranking":
-        PROJECT_ROOT
-        / "processed/sustainability/cost/cost_building_ranking.parquet",
-
-    "phase10_knowledge_base":
-        PROJECT_ROOT
-        / "processed/phase10_rag/knowledge_base/sustainability_knowledge.json",
-
-    "phase11_xai_dataset":
-        PROJECT_ROOT
-        / "processed/phase11_xai/xai_test_feature_dataset.parquet",
-
-    "phase11_xai_report":
-        PROJECT_ROOT
-        / "reports/phase11_xai/phase11_xai_report.json",
-
-    "phase12_report":
-        PROJECT_ROOT
-        / "reports/phase12_reporting/phase12_sustainability_report.json",
-
-    "phase12_markdown":
-        PROJECT_ROOT
-        / "reports/phase12_reporting/phase12_sustainability_report.md",
-
-    "phase12_building_reports":
-        PROJECT_ROOT
-        / "reports/phase12_reporting/building_reports",
-
-    "phase13_dashboard":
-        PROJECT_ROOT
-        / "app/streamlit_app.py",
-}
-
-
-validation = {
-    "phase": "Phase-13",
-    "status": "PASS",
-    "checks": {},
-}
-
-
-# ------------------------------------------------------------
-# Project root
-# ------------------------------------------------------------
-
-validation["checks"]["project_root"] = {
-    "pass": PROJECT_ROOT.exists()
-}
-
-
-# ------------------------------------------------------------
-# Artifact existence
-# ------------------------------------------------------------
-
-for name, path in artifacts.items():
-
-    validation["checks"][name] = {
-        "pass": path.exists(),
-        "path": str(path),
-    }
-
-
-# ------------------------------------------------------------
-# KPI validation
-# ------------------------------------------------------------
-
-with open(
-    artifacts["phase09_kpi"],
-    "r"
-) as f:
-
-    kpis = json.load(f)
-
-
-expected_kpis = {
-    "buildings": 1578,
-    "daily_records": 1153518,
-    "total_energy_kwh": 24587506120.897262573,
-    "net_carbon_tco2e": 8391336.567923609,
-    "net_energy_cost_usd": 2704795667.916605949,
-    "average_carbon_score": 97.966886447,
-    "average_cost_score": 97.976268165,
-}
-
-
-kpi_checks = {}
-
-for key, expected in expected_kpis.items():
-
-    actual = kpis.get(key)
-
-    if isinstance(expected, float):
-
-        passed = (
-            actual is not None
-            and abs(float(actual) - expected)
-            <= max(1e-6, abs(expected) * 1e-10)
-        )
-
-    else:
-
-        passed = (
-            actual is not None
-            and int(actual) == expected
-        )
-
-    kpi_checks[key] = {
-        "pass": passed,
-        "actual": actual,
-        "expected": expected,
-    }
-
-
-validation["checks"]["authoritative_kpis"] = kpi_checks
-
-
-# ------------------------------------------------------------
-# Building artifact validation
-# ------------------------------------------------------------
-
-building_df = pd.read_parquet(
-    artifacts["phase09_building_intelligence"]
-)
-
-validation["checks"]["building_count"] = {
-    "pass": len(building_df) == 1578,
-    "actual": len(building_df),
-    "expected": 1578,
-}
-
-
-# ------------------------------------------------------------
-# XAI validation
-# ------------------------------------------------------------
-
-xai_df = pd.read_parquet(
-    artifacts["phase11_xai_dataset"]
-)
-
-validation["checks"]["xai_prediction_count"] = {
-    "pass": len(xai_df) == 110,
-    "actual": len(xai_df),
-    "expected": 110,
-}
-
-
-# ------------------------------------------------------------
-# Building reports
-# ------------------------------------------------------------
-
-building_reports_dir = (
-    artifacts["phase12_building_reports"]
-)
-
-if building_reports_dir.exists():
-
-    report_files = list(
-        building_reports_dir.glob("*")
-    )
-
-    validation["checks"]["building_report_count"] = {
-        "pass": len(report_files) == 1578,
-        "actual": len(report_files),
-        "expected": 1578,
-    }
-
-
-# ------------------------------------------------------------
-# Dashboard syntax
-# ------------------------------------------------------------
-
-dashboard_path = artifacts["phase13_dashboard"]
-
-try:
-
-    compile(
-        dashboard_path.read_text(
-            encoding="utf-8"
-        ),
-        str(dashboard_path),
-        "exec",
-    )
-
-    dashboard_syntax_pass = True
-
-except Exception as exc:
-
-    dashboard_syntax_pass = False
-
-    validation["dashboard_syntax_error"] = str(exc)
-
-
-validation["checks"]["dashboard_syntax"] = {
-    "pass": dashboard_syntax_pass
-}
-
-
-# ------------------------------------------------------------
-# Final status
-# ------------------------------------------------------------
-
-all_pass = True
-
-for check_name, result in validation["checks"].items():
-
-    if isinstance(result, dict):
-
-        if "pass" in result:
-            if not result["pass"]:
-                all_pass = False
-
-        else:
-
-            for nested in result.values():
-
-                if isinstance(nested, dict):
-                    if nested.get("pass") is False:
-                        all_pass = False
-
-
-validation["status"] = (
-    "PASS"
-    if all_pass
-    else "FAIL"
-)
-
-
-validation_path = (
-    REPORT_DIR
-    / "phase13_final_validation.json"
-)
-
-with open(
-    validation_path,
-    "w"
-) as f:
-
-    json.dump(
-        validation,
-        f,
-        indent=2,
-        default=str
-    )
-
-
-print(
-    json.dumps(
-        validation,
-        indent=2,
-        default=str
-    )
-)
-
-print("\nValidation report:")
-print(validation_path)
-'''
-
-validation_path = (
-    PHASE13_REPORT_DIR
-    / "phase13_validation.py"
-)
-
-validation_path.write_text(
-    phase13_validation_code,
-    encoding="utf-8"
-)
-
-print(validation_path)
-# ============================================================
-# PHASE-13 — CELL-19
-# FINAL VALIDATION — CORRECTED
-# ============================================================
-
-from pathlib import Path
-import json
-import pandas as pd
 import ast
+import json
+from pathlib import Path
+import pandas as pd
 
-# ------------------------------------------------------------
-# PROJECT ROOT
-# ------------------------------------------------------------
 
-PROJECT_ROOT = Path(
-    "/content/drive/MyDrive/GitHub_Project_01"
-)
+class Phase13Validator:
+    def __init__(self, project_root: Path):
+        self.project_root = Path(project_root)
+        self.kpi_path = self.project_root / "reports/sustainability/phase09_carbon_cost_kpis.json"
+        self.building_intelligence_path = self.project_root / "processed/sustainability/carbon_cost_building_intelligence.parquet"
+        self.xai_path = self.project_root / "processed/phase11_xai/xai_test_feature_dataset.parquet"
+        self.building_report_dir = self.project_root / "reports/phase12_reporting/building_reports"
+        self.dashboard_path = self.project_root / "app/streamlit_app.py"
+        self.master_path = self.project_root / "processed/sustainability/sustainability_master_dataset.parquet"
 
-assert PROJECT_ROOT.exists()
+        self.expected_kpis = {
+            "buildings": 1578,
+            "daily_records": 1153518,
+            "total_energy_kwh": 24587506120.897263,
+            "net_carbon_tco2e": 8391336.56792361,
+            "net_energy_cost_usd": 2704795667.916606,
+            "average_carbon_score": 97.966886447,
+            "average_cost_score": 97.976268165,
+        }
 
-# ------------------------------------------------------------
-# ARTIFACT PATHS
-# ------------------------------------------------------------
+        self.aliases = {
+            "buildings": {"buildings", "building_count", "total_buildings", "number_of_buildings"},
+            "daily_records": {"daily_records", "daily_record_count", "record_count", "records", "total_records"},
+            "total_energy_kwh": {"total_energy_kwh", "total_energy", "energy_kwh", "total_energy_consumption_kwh"},
+            "net_carbon_tco2e": {"net_carbon_tco2e", "net_carbon", "carbon_tco2e", "net_carbon_emissions"},
+            "net_energy_cost_usd": {"net_energy_cost_usd", "net_energy_cost", "energy_cost_usd", "net_cost"},
+            "average_carbon_score": {"average_carbon_score", "avg_carbon_score", "carbon_score"},
+            "average_cost_score": {"average_cost_score", "avg_cost_score", "cost_score"},
+        }
 
-KPI_PATH = (
-    PROJECT_ROOT /
-    "reports/sustainability/"
-    "phase09_carbon_cost_kpis.json"
-)
+    def _find_key_recursive(self, obj, target_keys):
+        if isinstance(obj, dict):
+            for key, value in obj.items():
+                if str(key).strip().lower() in target_keys:
+                    return value
+            for value in obj.values():
+                res = self._find_key_recursive(value, target_keys)
+                if res is not None:
+                    return res
+        elif isinstance(obj, list):
+            for item in obj:
+                res = self._find_key_recursive(item, target_keys)
+                if res is not None:
+                    return res
+        return None
 
-BUILDING_INTELLIGENCE_PATH = (
-    PROJECT_ROOT /
-    "processed/sustainability/"
-    "carbon_cost_building_intelligence.parquet"
-)
+    def validate_kpis(self) -> dict:
+        with open(self.kpi_path, "r", encoding="utf-8") as f:
+            kpi_data = json.load(f)
 
-CARBON_RANKING_PATH = (
-    PROJECT_ROOT /
-    "processed/sustainability/carbon/"
-    "carbon_building_ranking.parquet"
-)
+        actual_kpis = {}
+        for metric, keys in self.aliases.items():
+            val = self._find_key_recursive(kpi_data, keys)
+            if val is not None:
+                try:
+                    val = float(val)
+                except ValueError:
+                    pass
+            actual_kpis[metric] = val
 
-COST_RANKING_PATH = (
-    PROJECT_ROOT /
-    "processed/sustainability/cost/"
-    "cost_building_ranking.parquet"
-)
+        # Building intelligence fallback
+        building_df = pd.read_parquet(self.building_intelligence_path)
+        building_count = building_df["building_id"].nunique()
+        if actual_kpis.get("buildings") is None:
+            actual_kpis["buildings"] = building_count
 
-XAI_PATH = (
-    PROJECT_ROOT /
-    "processed/phase11_xai/"
-    "xai_test_feature_dataset.parquet"
-)
+        # Daily records fallback
+        if actual_kpis.get("daily_records") is None and self.master_path.exists():
+            master_df = pd.read_parquet(self.master_path, columns=["building_id"])
+            actual_kpis["daily_records"] = len(master_df)
 
-PHASE12_REPORT_PATH = (
-    PROJECT_ROOT /
-    "reports/phase12_reporting/"
-    "phase12_sustainability_report.json"
-)
+        kpi_validation = {}
+        for metric, expected in self.expected_kpis.items():
+            actual = actual_kpis.get(metric)
+            if metric in {"buildings", "daily_records"}:
+                passed = actual is not None and int(actual) == int(expected)
+            else:
+                passed = actual is not None and abs(float(actual) - float(expected)) <= 1e-5
 
-BUILDING_REPORT_DIR = (
-    PROJECT_ROOT /
-    "reports/phase12_reporting/"
-    "building_reports"
-)
+            kpi_validation[metric] = {
+                "pass": bool(passed),
+                "actual": actual,
+                "expected": expected
+            }
+        return kpi_validation
 
-DASHBOARD_PATH = (
-    PROJECT_ROOT /
-    "app/streamlit_app.py"
-)
+    def validate_xai_and_reports(self) -> tuple[dict, dict, int]:
+        xai_df = pd.read_parquet(self.xai_path)
+        xai_count = len(xai_df)
+        xai_check = {"pass": xai_count == 110, "actual": xai_count, "expected": 110}
 
-MASTER_PATH = (
-    PROJECT_ROOT /
-    "processed/sustainability/"
-    "sustainability_master_dataset.parquet"
-)
+        building_reports = list(self.building_report_dir.iterdir()) if self.building_report_dir.exists() else []
+        report_count = len([p for p in building_reports if p.is_file()])
+        report_check = {"pass": report_count == 1578, "actual": report_count, "expected": 1578}
 
-# ------------------------------------------------------------
-# ARTIFACT INVENTORY
-# ------------------------------------------------------------
+        building_df = pd.read_parquet(self.building_intelligence_path)
+        building_count = building_df["building_id"].nunique()
 
-artifact_checks = {
-    "phase09_kpi": KPI_PATH,
-    "phase09_building_intelligence": BUILDING_INTELLIGENCE_PATH,
-    "phase09_carbon_ranking": CARBON_RANKING_PATH,
-    "phase09_cost_ranking": COST_RANKING_PATH,
-    "phase11_xai_dataset": XAI_PATH,
-    "phase12_report": PHASE12_REPORT_PATH,
-    "phase12_building_reports": BUILDING_REPORT_DIR,
-    "phase13_dashboard": DASHBOARD_PATH,
-}
+        return xai_check, report_check, building_count
 
-print("=" * 60)
-print("PHASE-13 FINAL VALIDATION")
-print("=" * 60)
-
-for name, path in artifact_checks.items():
-
-    passed = path.exists()
-
-    print(
-        f"{name}: "
-        f"{'PASS' if passed else 'FAIL'}"
-    )
-
-    assert passed, f"Missing artifact: {path}"
-
-# ------------------------------------------------------------
-# LOAD PHASE-09 KPI
-# ------------------------------------------------------------
-
-with open(KPI_PATH, "r") as f:
-    kpi_data = json.load(f)
-
-# ------------------------------------------------------------
-# RECURSIVE KPI SEARCH
-# ------------------------------------------------------------
-
-def find_key_recursive(obj, target_keys):
-
-    if isinstance(obj, dict):
-
-        for key, value in obj.items():
-
-            if str(key).strip().lower() in target_keys:
-                return value
-
-        for value in obj.values():
-
-            result = find_key_recursive(
-                value,
-                target_keys
-            )
-
-            if result is not None:
-                return result
-
-    elif isinstance(obj, list):
-
-        for item in obj:
-
-            result = find_key_recursive(
-                item,
-                target_keys
-            )
-
-            if result is not None:
-                return result
-
-    return None
-
-# ------------------------------------------------------------
-# EXPECTED AUTHORITATIVE VALUES
-# ------------------------------------------------------------
-
-EXPECTED = {
-
-    "buildings": 1578,
-
-    "daily_records": 1153518,
-
-    "total_energy_kwh":
-        24587506120.897263,
-
-    "net_carbon_tco2e":
-        8391336.56792361,
-
-    "net_energy_cost_usd":
-        2704795667.916606,
-
-    "average_carbon_score":
-        97.966886447,
-
-    "average_cost_score":
-        97.976268165,
-}
-
-ALIASES = {
-
-    "buildings": {
-        "buildings",
-        "building_count",
-        "total_buildings",
-        "number_of_buildings",
-    },
-
-    "daily_records": {
-        "daily_records",
-        "daily_record_count",
-        "record_count",
-        "records",
-        "total_records",
-        "number_of_records",
-    },
-
-    "total_energy_kwh": {
-        "total_energy_kwh",
-        "total_energy",
-        "energy_kwh",
-        "total_energy_consumption_kwh",
-    },
-
-    "net_carbon_tco2e": {
-        "net_carbon_tco2e",
-        "net_carbon",
-        "carbon_tco2e",
-        "net_carbon_emissions",
-    },
-
-    "net_energy_cost_usd": {
-        "net_energy_cost_usd",
-        "net_energy_cost",
-        "energy_cost_usd",
-        "net_cost",
-    },
-
-    "average_carbon_score": {
-        "average_carbon_score",
-        "avg_carbon_score",
-        "carbon_score",
-    },
-
-    "average_cost_score": {
-        "average_cost_score",
-        "avg_cost_score",
-        "cost_score",
-    },
-}
-
-# ------------------------------------------------------------
-# READ KPI VALUES
-# ------------------------------------------------------------
-
-actual_kpis = {}
-
-for metric, keys in ALIASES.items():
-
-    value = find_key_recursive(
-        kpi_data,
-        keys
-    )
-
-    if value is not None:
-
+    def validate_dashboard(self) -> tuple[bool, bool, dict]:
+        source = self.dashboard_path.read_text(encoding="utf-8")
         try:
-            value = float(value)
-        except:
-            pass
+            ast.parse(source)
+            syntax_pass = True
+        except Exception:
+            syntax_pass = False
 
-    actual_kpis[metric] = value
+        lower_source = source.lower()
+        content_checks = {
+            "streamlit": "import streamlit" in lower_source or "from streamlit" in lower_source,
+            "plotly": "plotly" in lower_source,
+            "phase09": "phase09" in lower_source,
+            "building_data": "building" in lower_source,
+            "forecast": "forecast" in lower_source,
+            "xai": "xai" in lower_source,
+            "rag": "rag" in lower_source,
+        }
+        content_pass = all(content_checks.values())
+        return syntax_pass, content_pass, content_checks
 
-# ------------------------------------------------------------
-# BUILDING INTELLIGENCE
-# ------------------------------------------------------------
+"""
+Dashboard contract verification module.
+"""
 
-building_df = pd.read_parquet(
-    BUILDING_INTELLIGENCE_PATH
-)
+from pathlib import Path
 
-building_count = (
-    building_df["building_id"]
-    .nunique()
-)
+def verify_dashboard_contract(dashboard_path: Path) -> tuple[bool, dict]:
+    source = dashboard_path.read_text(encoding="utf-8").lower()
+    contract = {
+        "streamlit": "streamlit" in source,
+        "plotly": "plotly" in source,
+        "kpi": "kpi" in source,
+        "building": "building" in source,
+        "ranking": "rank" in source,
+        "energy": "energy" in source,
+        "carbon": "carbon" in source,
+        "cost": "cost" in source,
+        "forecast": "forecast" in source,
+        "xai": "xai" in source,
+        "rag": "rag" in source,
+        "report": "report" in source,
+    }
+    return all(contract.values()), contract
 
-if actual_kpis["buildings"] is None:
-    actual_kpis["buildings"] = building_count
 
-# ------------------------------------------------------------
-# DAILY RECORD FALLBACK
-# ------------------------------------------------------------
+"""
+Final artifact inventory verification module.
+"""
 
-if actual_kpis["daily_records"] is None:
+from pathlib import Path
 
-    master_df = pd.read_parquet(
-        MASTER_PATH,
-        columns=["building_id"]
-    )
-
-    actual_kpis["daily_records"] = len(
-        master_df
-    )
-
-    del master_df
-
-# ------------------------------------------------------------
-# KPI VALIDATION
-# ------------------------------------------------------------
-
-kpi_validation = {}
-
-for metric, expected in EXPECTED.items():
-
-    actual = actual_kpis.get(metric)
-
-    if metric in {
-        "buildings",
-        "daily_records"
-    }:
-
-        passed = (
-            actual is not None
-            and int(actual) == int(expected)
-        )
-
-    else:
-
-        passed = (
-            actual is not None
-            and abs(
-                float(actual) -
-                float(expected)
-            ) <= 1e-5
-        )
-
-    kpi_validation[metric] = {
-        "pass": bool(passed),
-        "actual": actual,
-        "expected": expected
+def get_required_artifacts(project_root: Path) -> dict:
+    return {
+        "streamlit_dashboard": project_root / "app/streamlit_app.py",
+        "phase13_report": project_root / "reports/phase13_dashboard/phase13_final_validation.json",
+        "phase09_kpi": project_root / "reports/sustainability/phase09_carbon_cost_kpis.json",
+        "phase09_building_intelligence": project_root / "processed/sustainability/carbon_cost_building_intelligence.parquet",
+        "phase09_carbon_ranking": PROJECT_ROOT / "processed/sustainability/carbon/carbon_building_ranking.parquet",
+        "phase09_cost_ranking": PROJECT_ROOT / "processed/sustainability/cost/cost_building_ranking.parquet",
+        "phase11_xai": PROJECT_ROOT / "processed/phase11_xai/xai_test_feature_dataset.parquet",
+        "phase12_report": PROJECT_ROOT / "reports/phase12_reporting/phase12_sustainability_report.json",
+        "phase12_building_reports": PROJECT_ROOT / "reports/phase12_reporting/building_reports",
     }
 
-# ------------------------------------------------------------
-# XAI
-# ------------------------------------------------------------
 
-xai_df = pd.read_parquet(
-    XAI_PATH
-)
+"""
+Master Phase-13 Execution & Completion Script.
+Runs all validations, checks contracts, verifies inventory, and prints the completion gate.
+"""
 
-xai_prediction_count = len(xai_df)
+import json
+from pathlib import Path
+import sys
 
-xai_check = {
-    "pass": xai_prediction_count == 110,
-    "actual": xai_prediction_count,
-    "expected": 110
-}
+# Add project root to path
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.append(str(PROJECT_ROOT))
 
-# ------------------------------------------------------------
-# BUILDING REPORTS
-# ------------------------------------------------------------
+from pipeline.final_validator import Phase13Validator
+from pipeline.contract_validator import verify_dashboard_contract
+from pipeline.inventory_checker import get_required_artifacts
 
-building_report_files = [
-    p
-    for p in BUILDING_REPORT_DIR.iterdir()
-    if p.is_file()
-]
 
-building_report_count = len(
-    building_report_files
-)
+def main():
+    print("=" * 60)
+    print("PHASE-13: MASTER PIPELINE EXECUTION & VALIDATION")
+    print("=" * 60)
 
-building_report_check = {
-    "pass": building_report_count == 1578,
-    "actual": building_report_count,
-    "expected": 1578
-}
+    validator = Phase13Validator(PROJECT_ROOT)
 
-# ------------------------------------------------------------
-# DASHBOARD SYNTAX
-# ------------------------------------------------------------
+    # 1. Run KPI & Artifact Validation
+    kpi_validation = validator.validate_kpis()
+    xai_check, report_check, building_count = validator.validate_xai_and_reports()
+    syntax_pass, content_pass, content_checks = validator.validate_dashboard()
 
-dashboard_source = DASHBOARD_PATH.read_text(
-    encoding="utf-8"
-)
-
-try:
-
-    ast.parse(
-        dashboard_source
+    all_kpis_pass = all(item["pass"] for item in kpi_validation.values())
+    overall_pass = (
+        all_kpis_pass
+        and building_count == 1578
+        and xai_check["pass"]
+        and report_check["pass"]
+        and syntax_pass
+        and content_pass
     )
 
-    dashboard_syntax_pass = True
-
-except Exception as e:
-
-    dashboard_syntax_pass = False
-
-    print(
-        "Dashboard syntax error:",
-        e
-    )
-
-# ------------------------------------------------------------
-# DASHBOARD CONTENT
-# ------------------------------------------------------------
-
-dashboard_content_checks = {
-
-    "streamlit":
-        (
-            "import streamlit"
-            in dashboard_source
-            or
-            "from streamlit"
-            in dashboard_source
-        ),
-
-    "plotly":
-        "plotly" in dashboard_source.lower(),
-
-    "phase09":
-        "phase09" in dashboard_source.lower(),
-
-    "building_data":
-        (
-            "building" in
-            dashboard_source.lower()
-        ),
-
-    "forecast":
-        (
-            "forecast" in
-            dashboard_source.lower()
-        ),
-
-    "xai":
-        "xai" in
-        dashboard_source.lower(),
-
-    "rag":
-        "rag" in
-        dashboard_source.lower(),
-}
-
-dashboard_content_pass = all(
-    dashboard_content_checks.values()
-)
-
-# ------------------------------------------------------------
-# OVERALL
-# ------------------------------------------------------------
-
-all_kpis_pass = all(
-    item["pass"]
-    for item in
-    kpi_validation.values()
-)
-
-overall_pass = (
-    all_kpis_pass
-    and building_count == 1578
-    and xai_check["pass"]
-    and building_report_check["pass"]
-    and dashboard_syntax_pass
-    and dashboard_content_pass
-)
-
-# ------------------------------------------------------------
-# FINAL REPORT
-# ------------------------------------------------------------
-
-final_report = {
-
-    "phase": "Phase-13",
-
-    "status":
-        "PASS"
-        if overall_pass
-        else
-        "FAIL",
-
-    "checks": {
-
-        "project_root": {
-            "pass": True
-        },
-
-        "phase09_kpi": {
-            "pass": KPI_PATH.exists(),
-            "path": str(KPI_PATH)
-        },
-
-        "phase09_building_intelligence": {
-            "pass":
-                BUILDING_INTELLIGENCE_PATH.exists(),
-            "path":
-                str(BUILDING_INTELLIGENCE_PATH)
-        },
-
-        "phase09_carbon_ranking": {
-            "pass":
-                CARBON_RANKING_PATH.exists(),
-            "path":
-                str(CARBON_RANKING_PATH)
-        },
-
-        "phase09_cost_ranking": {
-            "pass":
-                COST_RANKING_PATH.exists(),
-            "path":
-                str(COST_RANKING_PATH)
-        },
-
-        "phase11_xai_dataset": {
-            "pass":
-                XAI_PATH.exists(),
-            "path":
-                str(XAI_PATH)
-        },
-
-        "phase12_report": {
-            "pass":
-                PHASE12_REPORT_PATH.exists(),
-            "path":
-                str(PHASE12_REPORT_PATH)
-        },
-
-        "phase12_building_reports": {
-            "pass":
-                BUILDING_REPORT_DIR.exists(),
-            "path":
-                str(BUILDING_REPORT_DIR)
-        },
-
-        "phase13_dashboard": {
-            "pass":
-                DASHBOARD_PATH.exists(),
-            "path":
-                str(DASHBOARD_PATH)
-        },
-
-        "authoritative_kpis":
-            kpi_validation,
-
-        "building_count": {
-            "pass":
-                building_count == 1578,
-            "actual":
-                int(building_count),
-            "expected":
-                1578
-        },
-
-        "xai_prediction_count":
-            xai_check,
-
-        "building_report_count":
-            building_report_check,
-
-        "dashboard_syntax": {
-            "pass":
-                dashboard_syntax_pass
-        },
-
-        "dashboard_content": {
-            "pass":
-                dashboard_content_pass,
-            "checks":
-                dashboard_content_checks
+    # 2. Compile Final Report Dictionary
+    final_report = {
+        "phase": "Phase-13",
+        "status": "PASS" if overall_pass else "FAIL",
+        "checks": {
+            "authoritative_kpis": kpi_validation,
+            "building_count": {"pass": building_count == 1578, "actual": int(building_count), "expected": 1578},
+            "xai_prediction_count": xai_check,
+            "building_report_count": report_check,
+            "dashboard_syntax": {"pass": syntax_pass},
+            "dashboard_content": {"pass": content_pass, "checks": content_checks},
         }
     }
-}
 
-# ------------------------------------------------------------
-# SAVE
-# ------------------------------------------------------------
-
-REPORT_DIR = (
-    PROJECT_ROOT /
-    "reports/phase13_dashboard"
-)
-
-REPORT_DIR.mkdir(
-    parents=True,
-    exist_ok=True
-)
-
-FINAL_REPORT_PATH = (
-    REPORT_DIR /
-    "phase13_final_validation.json"
-)
-
-with open(
-    FINAL_REPORT_PATH,
-    "w"
-) as f:
-
-    json.dump(
-        final_report,
-        f,
-        indent=2,
-        default=str
-    )
-
-# ------------------------------------------------------------
-# PRINT
-# ------------------------------------------------------------
-
-print("\n" + "=" * 60)
-
-for metric, result in kpi_validation.items():
-
-    print(
-        f"{metric}: "
-        f"{'PASS' if result['pass'] else 'FAIL'}"
-    )
-
-print(
-    "\nBuilding count:",
-    "PASS"
-    if building_count == 1578
-    else "FAIL"
-)
-
-print(
-    "XAI predictions:",
-    "PASS"
-    if xai_check["pass"]
-    else "FAIL"
-)
-
-print(
-    "Building reports:",
-    "PASS"
-    if building_report_check["pass"]
-    else "FAIL"
-)
-
-print(
-    "Dashboard syntax:",
-    "PASS"
-    if dashboard_syntax_pass
-    else "FAIL"
-)
-
-print(
-    "Dashboard content:",
-    "PASS"
-    if dashboard_content_pass
-    else "FAIL"
-)
-
-print(
-    "\nFinal report:",
-    FINAL_REPORT_PATH
-)
-
-print("\n" + "=" * 60)
-
-if overall_pass:
-
-    print("🟢 PHASE-13: PASS")
-
-else:
-
-    print("🔴 PHASE-13: FAIL")
-
-# ============================================================
-# PHASE-13 — CELL-20
-# DASHBOARD CONTRACT VALIDATION
-# ============================================================
-
-from pathlib import Path
-
-PROJECT_ROOT = Path(
-    "/content/drive/MyDrive/GitHub_Project_01"
-)
-
-DASHBOARD_PATH = (
-    PROJECT_ROOT /
-    "app/streamlit_app.py"
-)
-
-source = DASHBOARD_PATH.read_text(
-    encoding="utf-8"
-).lower()
-
-contract = {
-
-    "streamlit": (
-        "streamlit" in source
-    ),
-
-    "plotly": (
-        "plotly" in source
-    ),
-
-    "kpi": (
-        "kpi" in source
-    ),
-
-    "building": (
-        "building" in source
-    ),
-
-    "ranking": (
-        "rank" in source
-    ),
-
-    "energy": (
-        "energy" in source
-    ),
-
-    "carbon": (
-        "carbon" in source
-    ),
-
-    "cost": (
-        "cost" in source
-    ),
-
-    "forecast": (
-        "forecast" in source
-    ),
-
-    "xai": (
-        "xai" in source
-    ),
-
-    "rag": (
-        "rag" in source
-    ),
-
-    "report": (
-        "report" in source
-    ),
-}
-
-print("=" * 60)
-print("PHASE-13 DASHBOARD CONTRACT")
-print("=" * 60)
-
-for name, passed in contract.items():
-
-    print(
-        f"{name}: "
-        f"{'PASS' if passed else 'FAIL'}"
-    )
-
-contract_pass = all(
-    contract.values()
-)
-
-print("\nOverall:")
-
-if contract_pass:
-
-    print("🟢 Dashboard contract: PASS")
-
-else:
-
-    print("🔴 Dashboard contract: FAIL")
-
-# ============================================================
-# PHASE-13 — CELL-21
-# FINAL ARTIFACT INVENTORY
-# ============================================================
-
-from pathlib import Path
-
-PROJECT_ROOT = Path(
-    "/content/drive/MyDrive/GitHub_Project_01"
-)
-
-required_artifacts = {
-
-    "streamlit_dashboard":
-        PROJECT_ROOT /
-        "app/streamlit_app.py",
-
-    "phase13_report":
-        PROJECT_ROOT /
-        "reports/phase13_dashboard/"
-        "phase13_final_validation.json",
-
-    "phase09_kpi":
-        PROJECT_ROOT /
-        "reports/sustainability/"
-        "phase09_carbon_cost_kpis.json",
-
-    "phase09_building_intelligence":
-        PROJECT_ROOT /
-        "processed/sustainability/"
-        "carbon_cost_building_intelligence.parquet",
-
-    "phase09_carbon_ranking":
-        PROJECT_ROOT /
-        "processed/sustainability/carbon/"
-        "carbon_building_ranking.parquet",
-
-    "phase09_cost_ranking":
-        PROJECT_ROOT /
-        "processed/sustainability/cost/"
-        "cost_building_ranking.parquet",
-
-    "phase11_xai":
-        PROJECT_ROOT /
-        "processed/phase11_xai/"
-        "xai_test_feature_dataset.parquet",
-
-    "phase12_report":
-        PROJECT_ROOT /
-        "reports/phase12_reporting/"
-        "phase12_sustainability_report.json",
-
-    "phase12_building_reports":
-        PROJECT_ROOT /
-        "reports/phase12_reporting/"
-        "building_reports",
-}
-
-print("=" * 60)
-print("PHASE-13 FINAL ARTIFACT INVENTORY")
-print("=" * 60)
-
-inventory_pass = True
-
-for name, path in required_artifacts.items():
-
-    passed = path.exists()
-
-    print(
-        f"{name}: "
-        f"{'PASS' if passed else 'FAIL'}"
-    )
-
-    if not passed:
-        inventory_pass = False
-
-print("\nArtifact inventory:")
-
-if inventory_pass:
-
-    print("🟢 PASS")
-
-else:
-
-    print("🔴 FAIL")
-
-# ============================================================
-# PHASE-13 — CELL-22
-# FINAL COMPLETION GATE
-# ============================================================
-
-from pathlib import Path
-import json
-
-PROJECT_ROOT = Path(
-    "/content/drive/MyDrive/GitHub_Project_01"
-)
-
-VALIDATION_PATH = (
-    PROJECT_ROOT /
-    "reports/phase13_dashboard/"
-    "phase13_final_validation.json"
-)
-
-DASHBOARD_PATH = (
-    PROJECT_ROOT /
-    "app/streamlit_app.py"
-)
-
-BUILDING_REPORT_DIR = (
-    PROJECT_ROOT /
-    "reports/phase12_reporting/"
-    "building_reports"
-)
-
-print("=" * 60)
-print("PHASE-13 COMPLETION GATE")
-print("=" * 60)
-
-# ------------------------------------------------------------
-# FILE CHECKS
-# ------------------------------------------------------------
-
-validation_exists = VALIDATION_PATH.exists()
-dashboard_exists = DASHBOARD_PATH.exists()
-building_reports_exist = BUILDING_REPORT_DIR.exists()
-
-print(
-    "Validation report:",
-    "PASS" if validation_exists else "FAIL"
-)
-
-print(
-    "Dashboard:",
-    "PASS" if dashboard_exists else "FAIL"
-)
-
-print(
-    "Building reports directory:",
-    "PASS" if building_reports_exist else "FAIL"
-)
-
-# ------------------------------------------------------------
-# READ VALIDATION
-# ------------------------------------------------------------
-
-if validation_exists:
-
-    with open(
-        VALIDATION_PATH,
-        "r"
-    ) as f:
-
-        report = json.load(f)
-
-    validation_status = report.get(
-        "status"
-    )
-
-else:
-
-    validation_status = "MISSING"
-
-print(
-    "Saved Phase-13 validation:",
-    validation_status
-)
-
-# ------------------------------------------------------------
-# BUILDING REPORT COUNT
-# ------------------------------------------------------------
-
-if building_reports_exist:
-
-    building_report_count = len([
-        p
-        for p in BUILDING_REPORT_DIR.iterdir()
-        if p.is_file()
-    ])
-
-else:
-
-    building_report_count = 0
-
-print(
-    "Building reports:",
-    building_report_count,
-    "/ 1578"
-)
-
-# ------------------------------------------------------------
-# FINAL GATE
-# ------------------------------------------------------------
-
-phase13_complete = (
-    validation_exists
-    and dashboard_exists
-    and building_reports_exist
-    and validation_status == "PASS"
-    and building_report_count == 1578
-)
-
-print("\n" + "=" * 60)
-
-if phase13_complete:
-
-    print("🟢 PHASE-13 COMPLETE — PASS")
-
-    print("\nCompleted components:")
-    print("✓ Streamlit dashboard")
-    print("✓ Plotly visualizations")
-    print("✓ Authoritative KPI integration")
-    print("✓ Building intelligence")
-    print("✓ Building ranking")
-    print("✓ Sustainability analysis")
-    print("✓ Forecast/XAI integration")
-    print("✓ RAG interface")
-    print("✓ Phase-12 report access")
-    print("✓ Building report validation")
-    print("✓ Machine-readable validation")
-    print("✓ Final artifact inventory")
-
-    print("\nNEXT PHASE:")
-    print("PHASE-14 — MLFLOW + INFERENCE PIPELINE")
-
-else:
-
-    print("🔴 PHASE-13 NOT COMPLETE")
-    print("Do not begin Phase-14 yet.")
-
-print("=" * 60)
+    # Save Report
+    report_dir = PROJECT_ROOT / "reports/phase13_dashboard"
+    report_dir.mkdir(parents=True, exist_ok=True)
+    validation_path = report_dir / "phase13_final_validation.json"
+
+    with open(validation_path, "w", encoding="utf-8") as f:
+        json.dump(final_report, f, indent=2, default=str)
+
+    print(f"\nValidation report saved to: {validation_path}")
+
+    # 3. Contract & Inventory Verifications
+    contract_pass, contract_details = verify_dashboard_contract(validator.dashboard_path)
+    artifacts = get_required_artifacts(PROJECT_ROOT)
+    inventory_pass = all(path.exists() for path in artifacts.values())
+
+    # 4. Final Completion Gate Verdict
+    building_reports_dir = validator.building_report_dir
+    building_report_count = len(list(building_reports_dir.iterdir())) if building_reports_dir.exists() else 0
+
+    print("\n" + "=" * 60)
+    print("PHASE-13 COMPLETION GATE")
+    print("=" * 60)
+    print(f"Validation Report Status : {'PASS' if validation_path.exists() and overall_pass else 'FAIL'}")
+    print(f"Dashboard Contract       : {'PASS' if contract_pass else 'FAIL'}")
+    print(f"Artifact Inventory       : {'PASS' if inventory_pass else 'FAIL'}")
+    print(f"Building Reports Count   : {building_report_count} / 1578")
+
+    if overall_pass and contract_pass and inventory_pass and building_report_count == 1578:
+        print("\n🟢 PHASE-13 COMPLETE — PASS")
+        print("\nCompleted components:")
+        print("✓ Streamlit dashboard & Plotly visualizations")
+        print("✓ Authoritative KPI & building intelligence integration")
+        print("✓ XAI predictions & RAG interface")
+        print("✓ Machine-readable JSON validation report")
+        print("\nNEXT PHASE:")
+        print("PHASE-14 — MLFLOW + INFERENCE PIPELINE")
+    else:
+        print("\n🔴 PHASE-13 NOT COMPLETE")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
 
