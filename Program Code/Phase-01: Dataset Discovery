@@ -1,42 +1,25 @@
-import pandas as pd
-import numpy as np
 import os
-files=os.listdir(DATA_PATH)
+import numpy as np
+import pandas as pd
 
-csv_files=[
-    f for f in files
-    if f.endswith(".csv")
-]
+# Ensure DATA_PATH is defined in your environment or configuration
+# DATA_PATH = "path/to/your/data"
 
+files = os.listdir(DATA_PATH)
+csv_files = [f for f in files if f.endswith(".csv")]
 
-csv_files
 def profile_dataset(path):
-
-    df=pd.read_csv(path,nrows=5)
-
-
+    """Reads the first 5 rows of a CSV file and returns basic structural metadata."""
+    df = pd.read_csv(path, nrows=5)
     return {
-        "file":os.path.basename(path),
-        "columns":len(df.columns),
-        "sample_columns":list(df.columns[:10])
+        "file": os.path.basename(path),
+        "columns": len(df.columns),
+        "sample_columns": list(df.columns[:10])
     }
 
-
-
-profiles=[]
-
-
+profiles = []
 for file in csv_files:
+    file_path = os.path.join(DATA_PATH, file)
+    profiles.append(profile_dataset(file_path))
 
-    profiles.append(
-        profile_dataset(
-            DATA_PATH+"/"+file
-        )
-    )
-
-
-profile=pd.DataFrame(profiles)
-
-profile
-
-
+profile_df = pd.DataFrame(profiles)
