@@ -1,106 +1,44 @@
 # ============================================================
-# PHASE-14 — CELL-1
-# PROJECT + ARTIFACT VERIFICATION
+# PHASE-14 — SUSTAINABLE INFRASTRUCTURE FORECASTING
+# MODEL INFERENCE, MLFLOW TRACKING, & VALIDATION PIPELINE
 # ============================================================
 
-from pathlib import Path
-
-PROJECT_ROOT = Path(
-    "/content/drive/MyDrive/GitHub_Project_01"
-)
-
-MODEL_PATH = (
-    PROJECT_ROOT /
-    "models/forecasting/"
-    "xgboost_forecast_model.pkl"
-)
-
-TEST_PATH = (
-    PROJECT_ROOT /
-    "processed/forecasting/"
-    "forecasting_test.parquet"
-)
-
-XAI_PATH = (
-    PROJECT_ROOT /
-    "processed/phase11_xai/"
-    "xai_test_feature_dataset.parquet"
-)
-
-print("=" * 60)
-print("PHASE-14 — PROJECT VERIFICATION")
-print("=" * 60)
-
-print(
-    "Project root:",
-    PROJECT_ROOT
-)
-
-print(
-    "Project root:",
-    "PASS" if PROJECT_ROOT.exists() else "FAIL"
-)
-
-print(
-    "XGBoost model:",
-    "PASS" if MODEL_PATH.exists() else "FAIL"
-)
-
-print(
-    "Forecasting test data:",
-    "PASS" if TEST_PATH.exists() else "FAIL"
-)
-
-print(
-    "Phase-11 XAI dataset:",
-    "PASS" if XAI_PATH.exists() else "FAIL"
-)
-
-assert PROJECT_ROOT.exists()
-assert MODEL_PATH.exists()
-assert TEST_PATH.exists()
-assert XAI_PATH.exists()
-
-print("\n🟢 PHASE-14 CELL-1: PASS")
-
-# ============================================================
-# PHASE-14 — CELL-2
-# MLFLOW ENVIRONMENT
-# ============================================================
-
+import json
+import logging
+import pickle
 import sys
 import subprocess
+from pathlib import Path
 
-try:
-    import mlflow
+import numpy as np
+import pandas as pd
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
-except ImportError:
+# ------------------------------------------------------------
+# 1. CONFIGURATION & LOGGING SETUP
+# ------------------------------------------------------------
 
-    subprocess.check_call([
-        sys.executable,
-        "-m",
-        "pip",
-        "install",
-        "-q",
-        "mlflow"
-    ])
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+)
+logger = logging.getLogger("Phase14Pipeline")
 
-    import mlflow
+PROJECT_ROOT = Path("/content/drive/MyDrive/GitHub_Project_01")
+if not PROJECT_ROOT.exists():
+    PROJECT_ROOT = Path.cwd()
 
-print("MLflow version:", mlflow.__version__)
+MODEL_PATH = PROJECT_ROOT / "models" / "forecasting" / "xgboost_forecast_model.pkl"
+TEST_PATH = PROJECT_ROOT / "processed" / "forecasting" / "forecasting_test.parquet"
+XAI_PATH = PROJECT_ROOT / "processed" / "phase11_xai" / "xai_test_feature_dataset.parquet"
 
-print("\n🟢 PHASE-14 CELL-2: PASS")
+INFERENCE_DIR = PROJECT_ROOT / "processed" / "phase14_inference"
+INFERENCE_PATH = INFERENCE_DIR / "phase14_inference_predictions.parquet"
 
+REPORT_DIR = PROJECT_ROOT / "reports" / "phase14_mlflow"
+VALIDATION_PATH = REPORT_DIR / "phase14_final_validation.json"
 
-# ============================================================
-# PHASE-14 — CELL-3
-# MODEL FEATURE CONTRACT
-# ============================================================
-
-import pickle
-
-with open(MODEL_PATH, "rb") as f:
-    model = pickle.load(f)
+MLFLOW_DB = PROJECT_ROOT / "mlflow.db"
 
 EXPECTED_FEATURES = [
     "year",
@@ -118,549 +56,197 @@ EXPECTED_FEATURES = [
     "rolling_std_30",
 ]
 
-print("=" * 60)
-print("MODEL FEATURE CONTRACT")
-print("=" * 60)
-
-print("Model type:")
-print(type(model).__name__)
-
-model_features = list(
-    getattr(model, "feature_names_in_", [])
-)
-
-if model_features:
-
-    print("\nSerialized model features:")
-    print(model_features)
-
-    assert model_features == EXPECTED_FEATURES
-
-else:
-
-    print(
-        "\nModel does not expose feature_names_in_."
-    )
-
-print("\nRequired feature count:")
-print(len(EXPECTED_FEATURES))
-
-print("\nFeature order:")
-for i, feature in enumerate(
-    EXPECTED_FEATURES,
-    start=1
-):
-    print(f"{i:02d}. {feature}")
-
-print("\n🟢 PHASE-14 CELL-3: PASS")
-
-# ============================================================
-# PHASE-14 — CELL-4
-# INFERENCE DATASET
-# ============================================================
-
-import pandas as pd
-
-xai_df = pd.read_parquet(
-    XAI_PATH
-)
-
-X = xai_df[
-    EXPECTED_FEATURES
-].copy()
-
-y = xai_df[
-    "actual_target_energy"
-].copy()
-
-print("=" * 60)
-print("INFERENCE DATASET")
-print("=" * 60)
-
-print("Rows:", len(X))
-print("Features:", X.shape[1])
-
-print("\nFeature order:")
-print(list(X.columns))
-
-assert len(X) == 110
-assert list(X.columns) == EXPECTED_FEATURES
-assert len(y) == len(X)
-
-print("\n🟢 PHASE-14 CELL-4: PASS")
-# ============================================================
-# PHASE-14 — CELL-5
-# INFERENCE FUNCTION
-# ============================================================
-
-import numpy as np
-
-def run_inference(
-    model,
-    features: pd.DataFrame
-):
-
-    missing = [
-        col
-        for col in EXPECTED_FEATURES
-        if col not in features.columns
-    ]
-
-    if missing:
-        raise ValueError(
-            f"Missing features: {missing}"
-        )
-
-    X_input = features[
-        EXPECTED_FEATURES
-    ].copy()
-
-    predictions = model.predict(
-        X_input
-    )
-
-    predictions = np.asarray(
-        predictions,
-        dtype=float
-    )
-
-    if not np.isfinite(
-        predictions
-    ).all():
-
-        raise ValueError(
-            "Non-finite predictions detected."
-        )
-
-    return predictions
-
-
-predictions = run_inference(
-    model,
-    X
-)
-
-print("=" * 60)
-print("INFERENCE TEST")
-print("=" * 60)
-
-print(
-    "Predictions:",
-    len(predictions)
-)
-
-print(
-    "Sample:",
-    predictions[:5]
-)
-
-print(
-    "Finite:",
-    np.isfinite(predictions).all()
-)
-
-assert len(predictions) == 110
-
-print("\n🟢 PHASE-14 CELL-5: PASS")
-
-# ============================================================
-# PHASE-14 — CELL-6
-# INFERENCE METRICS
-# ============================================================
-
-from sklearn.metrics import (
-    mean_absolute_error,
-    mean_squared_error,
-    r2_score
-)
-
-mae = mean_absolute_error(
-    y,
-    predictions
-)
-
-rmse = mean_squared_error(
-    y,
-    predictions
-) ** 0.5
-
-r2 = r2_score(
-    y,
-    predictions
-)
-
 EXPECTED_MAE = 6087.625294
 EXPECTED_RMSE = 8492.059022
 EXPECTED_R2 = 0.768148
 
-print("=" * 60)
-print("INFERENCE METRICS")
-print("=" * 60)
 
-print(f"MAE : {mae:.6f}")
-print(f"RMSE: {rmse:.6f}")
-print(f"R²  : {r2:.6f}")
+# ------------------------------------------------------------
+# 2. HELPER FUNCTIONS
+# ------------------------------------------------------------
 
-assert abs(
-    mae - EXPECTED_MAE
-) < 1e-3
+def ensure_mlflow_installed() -> None:
+    """Ensures MLflow is available in the environment."""
+    try:
+        import mlflow
+        return mlflow
+    except ImportError:
+        logger.info("MLflow not found. Installing via pip...")
+        subprocess.check_call([
+            sys.executable, "-m", "pip", "install", "-q", "mlflow"
+        ])
+        import mlflow
+        return mlflow
 
-assert abs(
-    rmse - EXPECTED_RMSE
-) < 1e-3
 
-assert abs(
-    r2 - EXPECTED_R2
-) < 1e-3
+def validate_feature_contract(model) -> None:
+    """Verifies that the serialized model matches the expected feature contract."""
+    model_features = list(getattr(model, "feature_names_in_", []))
+    if model_features:
+        if model_features != EXPECTED_FEATURES:
+            raise ValueError(
+                f"Model features {model_features} do not match expected features {EXPECTED_FEATURES}"
+            )
+        logger.info("Model feature contract validated successfully.")
+    else:
+        logger.warning("Model does not expose feature_names_in_ attribute.")
 
-print("\n🟢 PHASE-14 CELL-6: PASS")
-# ============================================================
-# PHASE-14 — CELL-7
-# MLFLOW TRACKING — SQLITE BACKEND
-# ============================================================
 
-import mlflow
+def run_inference(model, features: pd.DataFrame) -> np.ndarray:
+    """Executes robust inference with structure checks and sanity validation."""
+    missing = [col for col in EXPECTED_FEATURES if col not in features.columns]
+    if missing:
+        raise ValueError(f"Missing required features in dataset: {missing}")
 
-# Store MLflow metadata in a lightweight SQLite database
-MLFLOW_DB = (
-    PROJECT_ROOT /
-    "mlflow.db"
-)
+    X_input = features[EXPECTED_FEATURES].copy()
+    predictions = model.predict(X_input)
+    predictions = np.asarray(predictions, dtype=float)
 
-tracking_uri = f"sqlite:///{MLFLOW_DB}"
+    if not np.isfinite(predictions).all():
+        raise ValueError("Non-finite predictions detected during inference.")
 
-mlflow.set_tracking_uri(
-    tracking_uri
-)
+    return predictions
 
-mlflow.set_experiment(
-    "sustainable-infrastructure-forecasting"
-)
 
-with mlflow.start_run(
-    run_name="phase14_xgboost_inference"
-) as run:
+# ------------------------------------------------------------
+# 3. MAIN PIPELINE EXECUTION
+# ------------------------------------------------------------
 
-    # Parameters
-    mlflow.log_param(
-        "model_type",
-        type(model).__name__
-    )
+def main() -> None:
+    logger.info("=" * 60)
+    logger.info("PHASE-14 — PROJECT VERIFICATION & EXECUTION")
+    logger.info("=" * 60)
 
-    mlflow.log_param(
-        "feature_count",
-        len(EXPECTED_FEATURES)
-    )
+    # Step 1: Verify Artifacts
+    logger.info(f"Project root: {PROJECT_ROOT}")
+    assert PROJECT_ROOT.exists(), f"Project root missing: {PROJECT_ROOT}"
+    assert MODEL_PATH.exists(), f"XGBoost model missing: {MODEL_PATH}"
+    assert TEST_PATH.exists(), f"Forecasting test data missing: {TEST_PATH}"
+    assert XAI_PATH.exists(), f"Phase-11 XAI dataset missing: {XAI_PATH}"
+    logger.info("Artifact verification: PASS")
 
-    mlflow.log_param(
-        "inference_rows",
-        len(X)
-    )
+    # Step 2: Environment Check (MLflow)
+    mlflow = ensure_mlflow_installed()
+    logger.info(f"MLflow version: {mlflow.__version__}")
 
-    mlflow.log_param(
-        "feature_order",
-        ",".join(EXPECTED_FEATURES)
-    )
+    # Step 3: Load Model & Feature Contract
+    with open(MODEL_PATH, "rb") as f:
+        model = pickle.load(f)
+    
+    validate_feature_contract(model)
+    logger.info(f"Model Type: {type(model).__name__}")
+    logger.info(f"Required Feature Count: {len(EXPECTED_FEATURES)}")
 
-    # Metrics
-    mlflow.log_metric(
-        "mae",
-        float(mae)
-    )
+    # Step 4: Load Inference Dataset
+    xai_df = pd.read_parquet(XAI_PATH)
+    X = xai_df[EXPECTED_FEATURES].copy()
+    y = xai_df["actual_target_energy"].copy()
 
-    mlflow.log_metric(
-        "rmse",
-        float(rmse)
-    )
+    logger.info(f"Inference Dataset Rows: {len(X)} | Features: {X.shape[1]}")
+    assert len(X) == 110
+    assert list(X.columns) == EXPECTED_FEATURES
+    assert len(y) == len(X)
 
-    mlflow.log_metric(
-        "r2",
-        float(r2)
-    )
+    # Step 5: Execute Inference
+    predictions = run_inference(model, X)
+    logger.info(f"Inference Test Passed. Generated {len(predictions)} predictions.")
 
-    run_id = run.info.run_id
+    # Step 6: Compute Metrics
+    mae = mean_absolute_error(y, predictions)
+    rmse = mean_squared_error(y, predictions) ** 0.5
+    r2 = r2_score(y, predictions)
 
-print("=" * 60)
-print("MLFLOW TRACKING")
-print("=" * 60)
+    logger.info(f"MAE : {mae:.6f}")
+    logger.info(f"RMSE: {rmse:.6f}")
+    logger.info(f"R²  : {r2:.6f}")
 
-print("Tracking URI:")
-print(tracking_uri)
+    assert abs(mae - EXPECTED_MAE) < 1e-3
+    assert abs(rmse - EXPECTED_RMSE) < 1e-3
+    assert abs(r2 - EXPECTED_R2) < 1e-3
 
-print("\nExperiment:")
-print(
-    "sustainable-infrastructure-forecasting"
-)
+    # Step 7: MLflow Tracking (SQLite Backend)
+    tracking_uri = f"sqlite:///{MLFLOW_DB}"
+    mlflow.set_tracking_uri(tracking_uri)
+    mlflow.set_experiment("sustainable-infrastructure-forecasting")
 
-print("\nRun ID:")
-print(run_id)
+    with mlflow.start_run(run_name="phase14_xgboost_inference") as run:
+        mlflow.log_param("model_type", type(model).__name__)
+        mlflow.log_param("feature_count", len(EXPECTED_FEATURES))
+        mlflow.log_param("inference_rows", len(X))
+        mlflow.log_param("feature_order", ",".join(EXPECTED_FEATURES))
 
-print("\nMetrics:")
-print(f"MAE : {mae:.6f}")
-print(f"RMSE: {rmse:.6f}")
-print(f"R²  : {r2:.6f}")
+        mlflow.log_metric("mae", float(mae))
+        mlflow.log_metric("rmse", float(rmse))
+        mlflow.log_metric("r2", float(r2))
 
-print("\n🟢 PHASE-14 CELL-7: PASS")
+        run_id = run.info.run_id
 
-# ============================================================
-# PHASE-14 — CELL-8
-# SAVE INFERENCE ARTIFACT
-# ============================================================
+    logger.info(f"MLflow Run successfully logged. Run ID: {run_id}")
 
-INFERENCE_DIR = (
-    PROJECT_ROOT /
-    "processed/phase14_inference"
-)
+    # Step 8: Save Inference Artifact
+    INFERENCE_DIR.mkdir(parents=True, exist_ok=True)
+    inference_output = xai_df[["datetime", "actual_target_energy"]].copy()
+    inference_output["prediction"] = predictions
+    inference_output.to_parquet(INFERENCE_PATH, index=False)
+    
+    assert INFERENCE_PATH.exists()
+    assert len(inference_output) == 110
+    logger.info(f"Inference artifact saved to: {INFERENCE_PATH}")
 
-INFERENCE_DIR.mkdir(
-    parents=True,
-    exist_ok=True
-)
-
-inference_output = xai_df[
-    [
-        "datetime",
-        "actual_target_energy"
-    ]
-].copy()
-
-inference_output[
-    "prediction"
-] = predictions
-
-INFERENCE_PATH = (
-    INFERENCE_DIR /
-    "phase14_inference_predictions.parquet"
-)
-
-inference_output.to_parquet(
-    INFERENCE_PATH,
-    index=False
-)
-
-print("=" * 60)
-print("INFERENCE ARTIFACT")
-print("=" * 60)
-
-print("Path:")
-print(INFERENCE_PATH)
-
-print("\nRows:")
-print(len(inference_output))
-
-assert INFERENCE_PATH.exists()
-assert len(inference_output) == 110
-
-print("\n🟢 PHASE-14 CELL-8: PASS")
-
-# ============================================================
-# PHASE-14 — CELL-9
-# VALIDATION REPORT
-# ============================================================
-
-import json
-import numpy as np
-
-REPORT_DIR = (
-    PROJECT_ROOT /
-    "reports/phase14_mlflow"
-)
-
-REPORT_DIR.mkdir(
-    parents=True,
-    exist_ok=True
-)
-
-MLFLOW_DB_EXISTS = MLFLOW_DB.exists()
-
-validation = {
-
-    "phase": "Phase-14",
-
-    "status": "PASS",
-
-    "model": {
-        "type": type(model).__name__,
-        "path": str(MODEL_PATH)
-    },
-
-    "feature_contract": {
-        "count": len(EXPECTED_FEATURES),
-        "features": EXPECTED_FEATURES
-    },
-
-    "inference": {
-        "rows": len(predictions),
-        "finite_predictions":
-            bool(np.isfinite(
-                predictions
-            ).all())
-    },
-
-    "metrics": {
-        "mae": float(mae),
-        "rmse": float(rmse),
-        "r2": float(r2)
-    },
-
-    "mlflow": {
-        "tracking_uri": tracking_uri,
-        "database": str(MLFLOW_DB),
-        "database_exists": MLFLOW_DB_EXISTS,
-        "experiment":
-            "sustainable-infrastructure-forecasting",
-        "run_id": run_id
-    },
-
-    "artifact": {
-        "path": str(INFERENCE_PATH),
-        "rows": len(inference_output)
+    # Step 9: Validation Report Generation
+    REPORT_DIR.mkdir(parents=True, exist_ok=True)
+    validation_payload = {
+        "phase": "Phase-14",
+        "status": "PASS",
+        "model": {
+            "type": type(model).__name__,
+            "path": str(MODEL_PATH)
+        },
+        "feature_contract": {
+            "count": len(EXPECTED_FEATURES),
+            "features": EXPECTED_FEATURES
+        },
+        "inference": {
+            "rows": len(predictions),
+            "finite_predictions": bool(np.isfinite(predictions).all())
+        },
+        "metrics": {
+            "mae": float(mae),
+            "rmse": float(rmse),
+            "r2": float(r2)
+        },
+        "mlflow": {
+            "tracking_uri": tracking_uri,
+            "database": str(MLFLOW_DB),
+            "database_exists": MLFLOW_DB.exists(),
+            "experiment": "sustainable-infrastructure-forecasting",
+            "run_id": run_id
+        },
+        "artifact": {
+            "path": str(INFERENCE_PATH),
+            "rows": len(inference_output)
+        }
     }
-}
 
-VALIDATION_PATH = (
-    REPORT_DIR /
-    "phase14_final_validation.json"
-)
+    with open(VALIDATION_PATH, "w") as f:
+        json.dump(validation_payload, f, indent=2)
 
-with open(
-    VALIDATION_PATH,
-    "w"
-) as f:
+    assert VALIDATION_PATH.exists()
+    assert MLFLOW_DB.exists()
+    logger.info(f"Validation report saved to: {VALIDATION_PATH}")
 
-    json.dump(
-        validation,
-        f,
-        indent=2
-    )
+    # Step 10: Final Completion Gate
+    logger.info("=" * 60)
+    logger.info("🟢 PHASE-14 COMPLETE — PASS")
+    logger.info("✓ Model loading & validation")
+    logger.info("✓ Feature contract verification")
+    logger.info("✓ Lightweight inference")
+    logger.info("✓ MAE / RMSE / R² threshold gates")
+    logger.info("✓ MLflow SQLite tracking & logging")
+    logger.info("✓ Inference parquet artifact creation")
+    logger.info("✓ Machine-readable JSON validation report")
+    logger.info("=" * 60)
 
-print("=" * 60)
-print("PHASE-14 VALIDATION REPORT")
-print("=" * 60)
 
-print(
-    "Validation:",
-    VALIDATION_PATH
-)
-
-print(
-    "MLflow database:",
-    "PASS" if MLFLOW_DB_EXISTS else "FAIL"
-)
-
-assert VALIDATION_PATH.exists()
-assert MLFLOW_DB_EXISTS
-
-print("\n🟢 PHASE-14 CELL-9: PASS")
-
-# ============================================================
-# PHASE-14 — CELL-10
-# FINAL COMPLETION GATE
-# ============================================================
-
-import json
-import numpy as np
-
-with open(
-    VALIDATION_PATH,
-    "r"
-) as f:
-
-    final_validation = json.load(f)
-
-phase14_pass = (
-
-    VALIDATION_PATH.exists()
-
-    and INFERENCE_PATH.exists()
-
-    and MLFLOW_DB.exists()
-
-    and final_validation["status"] == "PASS"
-
-    and len(predictions) == 110
-
-    and np.isfinite(predictions).all()
-
-    and abs(
-        mae - 6087.625294
-    ) < 1e-3
-
-    and abs(
-        rmse - 8492.059022
-    ) < 1e-3
-
-    and abs(
-        r2 - 0.768148
-    ) < 1e-3
-)
-
-print("=" * 60)
-print("PHASE-14 FINAL GATE")
-print("=" * 60)
-
-print(
-    "Validation report:",
-    "PASS" if VALIDATION_PATH.exists()
-    else "FAIL"
-)
-
-print(
-    "Inference artifact:",
-    "PASS" if INFERENCE_PATH.exists()
-    else "FAIL"
-)
-
-print(
-    "MLflow SQLite database:",
-    "PASS" if MLFLOW_DB.exists()
-    else "FAIL"
-)
-
-print(
-    "Prediction count:",
-    len(predictions),
-    "/ 110"
-)
-
-print(
-    "MLflow Run ID:",
-    run_id
-)
-
-print(
-    "Saved validation:",
-    final_validation["status"]
-)
-
-print("\n" + "=" * 60)
-
-if phase14_pass:
-
-    print("🟢 PHASE-14 COMPLETE — PASS")
-
-    print("\nCompleted:")
-    print("✓ Model loading")
-    print("✓ Feature contract")
-    print("✓ Lightweight inference")
-    print("✓ Prediction validation")
-    print("✓ MAE / RMSE / R²")
-    print("✓ MLflow experiment tracking")
-    print("✓ SQLite backend")
-    print("✓ Parameters")
-    print("✓ Metrics")
-    print("✓ Inference artifact")
-    print("✓ Machine-readable validation")
-
-    print("\nNEXT:")
-    print(
-        "PHASE-15 — DEPLOYMENT + API + "
-        "GITHUB PACKAGING"
-    )
-
-else:
-
-    print("🔴 PHASE-14 FAIL")
-
-print("=" * 60)
-
+if __name__ == "__main__":
+    main()
