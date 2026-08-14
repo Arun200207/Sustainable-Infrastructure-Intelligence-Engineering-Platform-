@@ -1,231 +1,116 @@
-import pandas as pd
-import numpy as np
-import os
 import gc
-resources = {
+import os
+import numpy as np
+import pandas as pd
 
-    "electricity":"electricity.csv",
+# Constants and Configuration (Ensure DATA_PATH is defined in your environment)
+# DATA_PATH = "path/to/your/data"
+PROCESSED_PATH = os.path.join(DATA_PATH, "processed")
+os.makedirs(PROCESSED_PATH, exist_ok=True)
 
-    "chilledwater":"chilledwater.csv",
-
-    "hotwater":"hotwater.csv",
-
-    "gas":"gas.csv",
-
-    "steam":"steam.csv",
-
-    "water":"water.csv",
-
-    "irrigation":"irrigation.csv",
-
-    "solar":"solar.csv"
-
+RESOURCES = {
+    "electricity": "electricity.csv",
+    "chilledwater": "chilledwater.csv",
+    "hotwater": "hotwater.csv",
+    "gas": "gas.csv",
+    "steam": "steam.csv",
+    "water": "water.csv",
+    "irrigation": "irrigation.csv",
+    "solar": "solar.csv"
 }
 
 
-resources
-PROCESSED_PATH = DATA_PATH + "/processed"
-
-os.makedirs(
-    PROCESSED_PATH,
-    exist_ok=True
-)
-
-
-os.listdir(PROCESSED_PATH)
 def find_timestamp(df):
-
-    candidates=[
-        c for c in df.columns
-        if "timestamp" in c.lower()
-    ]
-
-    if len(candidates)==0:
-        raise Exception(
-            "No timestamp found"
-        )
-
+    """Finds and returns the column name containing timestamp information."""
+    candidates = [c for c in df.columns if "timestamp" in c.lower()]
+    if not candidates:
+        raise ValueError("No timestamp column found in the dataset.")
     return candidates[0]
-def process_resource(
-    resource_name,
-    filename
-):
 
+
+def process_resource(resource_name, filename):
+    """Loads a wide-format resource CSV, transforms it to long format, optimizes types, and saves as Parquet."""
     print("\n===================")
-    print("Processing:",resource_name)
+    print("Processing:", resource_name)
 
+    file_path = os.path.join(DATA_PATH, filename)
+    df = pd.read_csv(file_path)
+    print("Original Shape:", df.shape)
 
-    file_path=os.path.join(
-        DATA_PATH,
-        filename
-    )
+    # Timestamp conversion
+    timestamp_col = find_timestamp(df)
+    df[timestamp_col] = pd.to_datetime(df[timestamp_col])
 
-
-    # Load
-
-    df=pd.read_csv(
-        file_path
-    )
-
-
-    print(
-        "Original Shape:",
-        df.shape
-    )
-
-
-    # Timestamp
-
-    timestamp_col=find_timestamp(df)
-
-
-    df[timestamp_col]=pd.to_datetime(
-        df[timestamp_col]
-    )
-
-
-    # Wide -> Long
-
-    long_df=df.melt(
-
-        id_vars=[
-            timestamp_col
-        ],
-
+    # Wide to Long transformation
+    long_df = df.melt(
+        id_vars=[timestamp_col],
         var_name="building_id",
-
         value_name=resource_name
-
     )
 
-
-    # Numeric optimisation
-
-    long_df[resource_name]=pd.to_numeric(
-
+    # Numeric optimization
+    long_df[resource_name] = pd.to_numeric(
         long_df[resource_name],
-
         errors="coerce",
-
         downcast="float"
-
     )
-
 
     # Category compression
+    long_df["building_id"] = long_df["building_id"].astype("category")
 
-    long_df["building_id"]=(
-        long_df["building_id"]
-        .astype("category")
-    )
+    # Save to Parquet
+    output_path = os.path.join(PROCESSED_PATH, f"{resource_name}.parquet")
+    long_df.to_parquet(output_path, compression="snappy")
 
+    print("Processed:", long_df.shape)
+    print("Saved:", output_path)
 
-    # Save
-
-    output=os.path.join(
-
-        PROCESSED_PATH,
-
-        f"{resource_name}.parquet"
-
-    )
-
-
-    long_df.to_parquet(
-
-        output,
-
-        compression="snappy"
-
-    )
-
-
-    print(
-        "Processed:",
-        long_df.shape
-    )
-
-    print(
-        "Saved:",
-        output
-    )
-
-
-    # Cleanup
-
+    # Cleanup memory
     del df
     del long_df
-
     gc.collect()
-for resource,file in resources.items():
-
-    process_resource(
-        resource,
-        file
-    )
-os.listdir(PROCESSED_PATH)
-electricity = pd.read_parquet(
-
-    PROCESSED_PATH+
-    "/electricity.parquet"
-
-)
 
 
-electricity.head()
-electricity_daily=(
+def aggregate_and_enrich_electricity():
+    """Aggregates electricity data daily and parses building identifiers into structured components."""
+    electricity_path = os.path.join(PROCESSED_PATH, "electricity.parquet")
+    if not os.path.exists(electricity_path):
+        print("Electricity parquet file not found. Skipping aggregation.")
+        return
 
-    electricity
+    electricity = pd.read_parquet(electricity_path)
 
-    .assign(
-        date=
-        electricity.timestamp.dt.date
+    # Daily aggregation
+    electricity_daily = (
+        electricity
+        .assign(date=electricity["timestamp"].dt.date)
+        .groupby(["date", "building_id"])["electricity"]
+        .mean()
+        .reset_index()
     )
 
-    .groupby(
-        [
-            "date",
-            "building_id"
-        ]
+    # Parse building ID hierarchy
+    building_parts = (
+        electricity_daily["building_id"]
+        .astype(str)
+        .str.split("_", n=2, expand=True)
     )
 
-    ["electricity"]
+    electricity_daily["campus"] = building_parts[0]
+    electricity_daily["building_type"] = building_parts[1]
+    electricity_daily["building_name"] = building_parts[2]
 
-    .mean()
-
-    .reset_index()
-
-)
-electricity_daily.shape
-
-building_parts = (
-
-    electricity_daily
-    ["building_id"]
-    .astype(str)
-    .str.split(
-        "_",
-        n=2,
-        expand=True
-    )
-
-)
+    # Save aggregated output
+    output_path = os.path.join(PROCESSED_PATH, "electricity_daily.parquet")
+    electricity_daily.to_parquet(output_path, compression="snappy")
+    print("Saved daily aggregated electricity to:", output_path)
 
 
-electricity_daily["campus"] = building_parts[0]
+if __name__ == "__main__":
+    # Process all resource files
+    for resource, file in RESOURCES.items():
+        process_resource(resource, file)
 
-electricity_daily["building_type"] = building_parts[1]
-
-electricity_daily["building_name"] = building_parts[2]
-
-
-electricity_daily.to_parquet(
-
-    PROCESSED_PATH+
-    "/electricity_daily.parquet",
-
-    compression="snappy"
-
-)
-
-os.listdir(PROCESSED_PATH)
+    # Run electricity aggregation and feature enrichment
+    aggregate_and_enrich_electricity()
+    print("\nFiles in Processed Path:", os.listdir(PROCESSED_PATH))
