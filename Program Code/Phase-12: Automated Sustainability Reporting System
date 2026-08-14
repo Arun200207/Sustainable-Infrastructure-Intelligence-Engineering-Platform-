@@ -1,237 +1,38 @@
-from google.colab import drive
-drive.mount("/content/drive")
+"""
+Phase-12: Automated Sustainability Reporting System
+--------------------------------------------------
+Consolidates validated artifacts from Phase-09, Phase-10, and Phase-11 to 
+generate global and building-level automated sustainability reports and audit logs.
+"""
+
+from datetime import datetime, timezone
+import json
+import logging
+import math
 from pathlib import Path
+import typing as t
 
-PROJECT_ROOT = Path("/content/drive/MyDrive/GitHub_Project_01")
-
-print("Project root:")
-print(PROJECT_ROOT)
-
-if not PROJECT_ROOT.exists():
-    raise FileNotFoundError(
-        f"AUTHORITATIVE PROJECT ROOT NOT FOUND:\n{PROJECT_ROOT}"
-    )
-
-print("\nProject root exists: PASS")
-print(f"Is directory: {PROJECT_ROOT.is_dir()}")
-PHASE12_REPORT_ROOT = PROJECT_ROOT / "reports" / "phase12_reporting"
-PHASE12_BUILDING_ROOT = PHASE12_REPORT_ROOT / "building_reports"
-
-PHASE12_REPORT_ROOT.mkdir(parents=True, exist_ok=True)
-PHASE12_BUILDING_ROOT.mkdir(parents=True, exist_ok=True)
-
-print("Phase-12 report directory:")
-print(PHASE12_REPORT_ROOT)
-
-print("\nBuilding report directory:")
-print(PHASE12_BUILDING_ROOT)
-from pathlib import Path
-
-required_artifacts = {
-    "phase09_master_dataset":
-        PROJECT_ROOT / "processed/sustainability/sustainability_master_dataset.parquet",
-
-    "phase09_carbon_intelligence":
-        PROJECT_ROOT / "processed/sustainability/carbon/carbon_intelligence.parquet",
-
-    "phase09_carbon_building_ranking":
-        PROJECT_ROOT / "processed/sustainability/carbon/carbon_building_ranking.parquet",
-
-    "phase09_cost_intelligence":
-        PROJECT_ROOT / "processed/sustainability/cost/energy_cost_intelligence.parquet",
-
-    "phase09_cost_building_ranking":
-        PROJECT_ROOT / "processed/sustainability/cost/cost_building_ranking.parquet",
-
-    "phase09_carbon_cost_master":
-        PROJECT_ROOT / "processed/sustainability/carbon_cost_master.parquet",
-
-    "phase09_building_intelligence":
-        PROJECT_ROOT / "processed/sustainability/carbon_cost_building_intelligence.parquet",
-
-    "phase09_kpis":
-        PROJECT_ROOT / "reports/sustainability/phase09_carbon_cost_kpis.json",
-
-    "phase09_factor_configuration":
-        PROJECT_ROOT / "processed/sustainability/carbon/phase09_factor_configuration.json",
-
-    "phase09_validation":
-        PROJECT_ROOT / "reports/sustainability/phase09_repair_validation_report.json",
-
-    "phase10_knowledge_base":
-        PROJECT_ROOT / "processed/phase10_rag/knowledge_base/sustainability_knowledge.json",
-
-    "phase10_test_results":
-        PROJECT_ROOT / "reports/phase10_rag/phase10_rag_test_results.json",
-
-    "phase10_final_validation":
-        PROJECT_ROOT / "reports/phase10_rag/phase10_final_validation.json",
-
-    "phase11_xai_dataset":
-        PROJECT_ROOT / "processed/phase11_xai/xai_test_feature_dataset.parquet",
-
-    "phase11_xai_report":
-        PROJECT_ROOT / "reports/phase11_xai/phase11_xai_report.json",
-
-    "phase11_final_validation":
-        PROJECT_ROOT / "reports/phase11_xai/phase11_final_validation.json",
-}
-
-print("=" * 90)
-print("PHASE-12 SOURCE ARTIFACT INVENTORY")
-print("=" * 90)
-
-inventory_rows = []
-
-for name, path in required_artifacts.items():
-    exists = path.exists()
-
-    if exists:
-        if path.is_file():
-            size_mb = path.stat().st_size / (1024 ** 2)
-            description = f"{size_mb:.2f} MB"
-        else:
-            description = "DIRECTORY"
-    else:
-        description = "MISSING"
-
-    inventory_rows.append({
-        "artifact": name,
-        "path": str(path),
-        "exists": exists,
-        "size": description
-    })
-
-    print(f"{'PASS' if exists else 'FAIL'} | {name}")
-    print(f"       {path}")
-
-missing = [
-    row["artifact"]
-    for row in inventory_rows
-    if not row["exists"]
-]
-
-print("\n" + "=" * 90)
-
-if missing:
-    print("MISSING ARTIFACTS:")
-    for item in missing:
-        print(" -", item)
-else:
-    print("ALL EXPECTED PHASE-09/10/11 SOURCE ARTIFACTS FOUND: PASS")
 import pandas as pd
 
-parquet_sources = {
-    "phase09_master_dataset":
-        required_artifacts["phase09_master_dataset"],
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(message)s"
+)
+logger = logging.getLogger(__name__)
 
-    "phase09_carbon_intelligence":
-        required_artifacts["phase09_carbon_intelligence"],
+# =============================================================================
+# CONSTANTS & CONFIGURATION
+# =============================================================================
 
-    "phase09_carbon_building_ranking":
-        required_artifacts["phase09_carbon_building_ranking"],
+PROJECT_ROOT = Path("/content/drive/MyDrive/GitHub_Project_01")
+REPORTS_ROOT = PROJECT_ROOT / "reports"
+PROCESSED_ROOT = PROJECT_ROOT / "processed"
 
-    "phase09_cost_intelligence":
-        required_artifacts["phase09_cost_intelligence"],
+PHASE12_REPORT_ROOT = REPORTS_ROOT / "phase12_reporting"
+PHASE12_BUILDING_ROOT = PHASE12_REPORT_ROOT / "building_reports"
 
-    "phase09_cost_building_ranking":
-        required_artifacts["phase09_cost_building_ranking"],
-
-    "phase09_carbon_cost_master":
-        required_artifacts["phase09_carbon_cost_master"],
-
-    "phase09_building_intelligence":
-        required_artifacts["phase09_building_intelligence"],
-
-    "phase11_xai_dataset":
-        required_artifacts["phase11_xai_dataset"],
-}
-
-for name, path in parquet_sources.items():
-    print("\n" + "=" * 90)
-    print(name)
-    print("=" * 90)
-
-    df = pd.read_parquet(path)
-
-    print("Shape:", df.shape)
-    print("Columns:")
-    for col in df.columns:
-        print("  -", col)
-
-    print("\nDtypes:")
-    print(df.dtypes)
-import json
-
-json_sources = {
-    "phase09_kpis":
-        required_artifacts["phase09_kpis"],
-
-    "phase09_factor_configuration":
-        required_artifacts["phase09_factor_configuration"],
-
-    "phase09_validation":
-        required_artifacts["phase09_validation"],
-
-    "phase10_test_results":
-        required_artifacts["phase10_test_results"],
-
-    "phase10_final_validation":
-        required_artifacts["phase10_final_validation"],
-
-    "phase11_xai_report":
-        required_artifacts["phase11_xai_report"],
-
-    "phase11_final_validation":
-        required_artifacts["phase11_final_validation"],
-}
-
-json_objects = {}
-
-for name, path in json_sources.items():
-    with open(path, "r", encoding="utf-8") as f:
-        obj = json.load(f)
-
-    json_objects[name] = obj
-
-    print("\n" + "=" * 90)
-    print(name)
-    print("=" * 90)
-
-    if isinstance(obj, dict):
-        print("Top-level keys:")
-        for key in obj.keys():
-            print("  -", key)
-    elif isinstance(obj, list):
-        print("JSON list length:", len(obj))
-        if obj:
-            print("First item type:", type(obj[0]))
-            if isinstance(obj[0], dict):
-                print("First item keys:", list(obj[0].keys()))
-    else:
-        print("Type:", type(obj))
-with open(
-    required_artifacts["phase10_knowledge_base"],
-    "r",
-    encoding="utf-8"
-) as f:
-    phase10_kb = json.load(f)
-
-print("Phase-10 knowledge base type:", type(phase10_kb))
-
-if isinstance(phase10_kb, dict):
-    print("Top-level keys:")
-    for key in phase10_kb.keys():
-        print(" -", key)
-
-elif isinstance(phase10_kb, list):
-    print("Knowledge records:", len(phase10_kb))
-
-    if len(phase10_kb) > 0:
-        print("\nFirst knowledge record:")
-        print(json.dumps(phase10_kb[0], indent=2, default=str)[:5000])
-
-AUTHORITATIVE_KPIS = {
+AUTHORITATIVE_KPIS: t.Dict[str, t.Union[int, float]] = {
     "buildings": 1578,
     "daily_records": 1153518,
     "total_energy_kwh": 24587506120.897262573,
@@ -241,455 +42,294 @@ AUTHORITATIVE_KPIS = {
     "average_cost_score": 97.976268165,
 }
 
-print("=" * 80)
-print("AUTHORITATIVE PHASE-09 KPI VALUES")
-print("=" * 80)
+KPI_KEY_MAP = {
+    "buildings": ["total_buildings", "buildings", "building_count"],
+    "daily_records": ["total_daily_records", "daily_records", "records"],
+    "total_energy_kwh": ["total_energy", "total_energy_kwh", "energy_kwh"],
+    "net_carbon_tco2e": ["net_carbon", "net_carbon_tco2e", "carbon_tco2e"],
+    "net_energy_cost_usd": ["net_energy_cost", "net_energy_cost_usd", "energy_cost"],
+    "average_carbon_score": ["average_carbon_score", "avg_carbon_score"],
+    "average_cost_score": ["average_cost_score", "avg_cost_score"],
+}
 
-for key, value in AUTHORITATIVE_KPIS.items():
-    print(f"{key}: {value}")
 
-import math
+# =============================================================================
+# HELPER FUNCTIONS
+# =============================================================================
 
-phase09_kpis = json_objects["phase09_kpis"]
+def initialize_directories() -> None:
+    """Create required output directories if they do not exist."""
+    PHASE12_REPORT_ROOT.mkdir(parents=True, exist_ok=True)
+    PHASE12_BUILDING_ROOT.mkdir(parents=True, exist_ok=True)
+    logger.info("Output directories initialized successfully.")
 
-print("Phase-09 KPI JSON:")
-print(json.dumps(phase09_kpis, indent=2)[:10000])
 
-def find_value(obj, candidate_keys):
-    """
-    Recursively search dictionaries for one of the candidate keys.
-    Returns the first match.
-    """
+def get_required_artifacts(root: Path) -> t.Dict[str, Path]:
+    """Define and return paths to all required source artifacts."""
+    return {
+        "phase09_master_dataset": root / "processed/sustainability/sustainability_master_dataset.parquet",
+        "phase09_carbon_intelligence": root / "processed/sustainability/carbon/carbon_intelligence.parquet",
+        "phase09_carbon_building_ranking": root / "processed/sustainability/carbon/carbon_building_ranking.parquet",
+        "phase09_cost_intelligence": root / "processed/sustainability/cost/energy_cost_intelligence.parquet",
+        "phase09_cost_building_ranking": root / "processed/sustainability/cost/cost_building_ranking.parquet",
+        "phase09_carbon_cost_master": root / "processed/sustainability/carbon_cost_master.parquet",
+        "phase09_building_intelligence": root / "processed/sustainability/carbon_cost_building_intelligence.parquet",
+        "phase09_kpis": root / "reports/sustainability/phase09_carbon_cost_kpis.json",
+        "phase09_factor_configuration": root / "processed/sustainability/carbon/phase09_factor_configuration.json",
+        "phase09_validation": root / "reports/sustainability/phase09_repair_validation_report.json",
+        "phase10_knowledge_base": root / "processed/phase10_rag/knowledge_base/sustainability_knowledge.json",
+        "phase10_test_results": root / "reports/phase10_rag/phase10_rag_test_results.json",
+        "phase10_final_validation": root / "reports/phase10_rag/phase10_final_validation.json",
+        "phase11_xai_dataset": root / "processed/phase11_xai/xai_test_feature_dataset.parquet",
+        "phase11_xai_report": root / "reports/phase11_xai/phase11_xai_report.json",
+        "phase11_final_validation": root / "reports/phase11_xai/phase11_final_validation.json",
+    }
+
+
+def verify_artifacts(artifacts: t.Dict[str, Path]) -> None:
+    """Validate that all source artifacts exist on disk."""
+    missing = []
+    for name, path in artifacts.items():
+        if not path.exists():
+            missing.append(name)
+            logger.error(f"MISSING | {name}: {path}")
+        else:
+            size_desc = f"{path.stat().st_size / (1024 ** 2):.2f} MB" if path.is_file() else "DIRECTORY"
+            logger.info(f"PASS | {name} ({size_desc})")
+
+    if missing:
+        raise FileNotFoundError(f"Missing required source artifacts: {missing}")
+    logger.info("All expected source artifacts found successfully.")
+
+
+def find_value(obj: t.Any, candidate_keys: t.List[str]) -> t.Any:
+    """Recursively search dictionaries for one of the candidate keys."""
     if isinstance(obj, dict):
         for key in candidate_keys:
             if key in obj:
                 return obj[key]
-
         for value in obj.values():
             result = find_value(value, candidate_keys)
             if result is not None:
                 return result
-
     elif isinstance(obj, list):
         for item in obj:
             result = find_value(item, candidate_keys)
             if result is not None:
                 return result
-
     return None
 
 
-KPI_KEY_MAP = {
-    "buildings": [
-        "total_buildings",
-        "buildings",
-        "building_count"
-    ],
-
-    "daily_records": [
-        "total_daily_records",
-        "daily_records",
-        "records"
-    ],
-
-    "total_energy_kwh": [
-        "total_energy",
-        "total_energy_kwh",
-        "energy_kwh"
-    ],
-
-    "net_carbon_tco2e": [
-        "net_carbon",
-        "net_carbon_tco2e",
-        "carbon_tco2e"
-    ],
-
-    "net_energy_cost_usd": [
-        "net_energy_cost",
-        "net_energy_cost_usd",
-        "energy_cost"
-    ],
-
-    "average_carbon_score": [
-        "average_carbon_score",
-        "avg_carbon_score"
-    ],
-
-    "average_cost_score": [
-        "average_cost_score",
-        "avg_cost_score"
-    ],
-}
+def numeric_close(a: float, b: float, rel_tol: float = 1e-9, abs_tol: float = 1e-6) -> bool:
+    """Check if two numerical values are close within tolerance."""
+    return math.isclose(float(a), float(b), rel_tol=rel_tol, abs_tol=abs_tol)
 
 
-phase09_extracted_kpis = {}
-
-for name, candidate_keys in KPI_KEY_MAP.items():
-    value = find_value(
-        phase09_kpis,
-        candidate_keys
-    )
-
-    phase09_extracted_kpis[name] = value
-
-print(json.dumps(phase09_extracted_kpis, indent=2))
-
-def numeric_close(a, b, rel_tol=1e-9, abs_tol=1e-6):
-    return math.isclose(
-        float(a),
-        float(b),
-        rel_tol=rel_tol,
-        abs_tol=abs_tol
-    )
-
-
-validation_results = {}
-
-for key, authoritative_value in AUTHORITATIVE_KPIS.items():
-
-    extracted_value = phase09_extracted_kpis.get(key)
-
-    if extracted_value is None:
-        validation_results[key] = "FAIL_MISSING"
-        continue
-
-    if key in ["buildings", "daily_records"]:
-        passed = int(extracted_value) == int(authoritative_value)
-    else:
-        passed = numeric_close(
-            extracted_value,
-            authoritative_value
-        )
-
-    validation_results[key] = "PASS" if passed else "FAIL"
-
-
-print("=" * 80)
-print("PHASE-09 KPI CONSISTENCY VALIDATION")
-print("=" * 80)
-
-for key, result in validation_results.items():
-    print(f"{result:15s} | {key}")
-
-if not all(v == "PASS" for v in validation_results.values()):
-    raise ValueError(
-        "Phase-09 KPI consistency validation FAILED. "
-        "Do not continue Phase-12 until the source discrepancy is understood."
-    )
-
-print("\nPHASE-09 KPI SOURCE VALIDATION: PASS")
-
-building_intelligence = pd.read_parquet(
-    required_artifacts["phase09_building_intelligence"]
-)
-
-print("Building intelligence shape:", building_intelligence.shape)
-print("\nColumns:")
-print(building_intelligence.columns.tolist())
-
-print("\nFirst 5 rows:")
-display(building_intelligence.head())
-
-building_id_candidates = [
-    "building_id",
-    "BuildingID",
-    "building",
-    "id"
-]
-
-building_id_column = None
-
-for candidate in building_id_candidates:
-    if candidate in building_intelligence.columns:
-        building_id_column = candidate
-        break
-
-if building_id_column is None:
-    raise ValueError(
-        "Could not identify the building ID column. "
-        "Inspect Cell 12 before continuing."
-    )
-
-print("Building ID column:", building_id_column)
-
-building_count = building_intelligence[building_id_column].nunique()
-
-print("Unique buildings:", building_count)
-
-if building_count != AUTHORITATIVE_KPIS["buildings"]:
-    raise ValueError(
-        f"Building count mismatch: "
-        f"{building_count} != {AUTHORITATIVE_KPIS['buildings']}"
-    )
-
-print("Building count validation: PASS")
-
-phase12_building_reports = building_intelligence.copy()
-
-print("Phase-12 building report source shape:")
-print(phase12_building_reports.shape)
-
-print("\nColumns:")
-print(phase12_building_reports.columns.tolist())
-global_kpi_summary = {
-    "project": "Sustainable Infrastructure Intelligence Platform",
-    "phase": "Phase-12 Automated Sustainability Reporting",
-    "buildings": AUTHORITATIVE_KPIS["buildings"],
-    "daily_records": AUTHORITATIVE_KPIS["daily_records"],
-    "total_energy_kwh": AUTHORITATIVE_KPIS["total_energy_kwh"],
-    "net_carbon_tco2e": AUTHORITATIVE_KPIS["net_carbon_tco2e"],
-    "net_energy_cost_usd": AUTHORITATIVE_KPIS["net_energy_cost_usd"],
-    "average_carbon_score": AUTHORITATIVE_KPIS["average_carbon_score"],
-    "average_cost_score": AUTHORITATIVE_KPIS["average_cost_score"],
-}
-
-print(json.dumps(global_kpi_summary, indent=2))
-ranking_summary = {}
-
-possible_rank_columns = [
-    "overall_rank",
-    "carbon_rank",
-    "cost_rank"
-]
-
-for col in possible_rank_columns:
-    if col in phase12_building_reports.columns:
-        ranking_summary[col] = {
-            "minimum": phase12_building_reports[col].min(),
-            "maximum": phase12_building_reports[col].max(),
-            "unique_values": phase12_building_reports[col].nunique()
-        }
-
-print(json.dumps(ranking_summary, indent=2, default=str))
-print("Available building intelligence columns:")
-for col in phase12_building_reports.columns:
-    print(" -", col)
-def generate_grounded_recommendation(row):
+def generate_grounded_recommendation(row: pd.Series) -> t.List[str]:
+    """Generate deterministic, grounded recommendations based on building scores."""
     recommendations = []
-
     carbon_score = row.get("carbon_score")
     cost_score = row.get("cost_score")
 
     if pd.notna(carbon_score):
         if carbon_score < 50:
-            recommendations.append(
-                "Prioritize carbon-reduction interventions."
-            )
+            recommendations.append("Prioritize carbon-reduction interventions.")
         elif carbon_score < 75:
-            recommendations.append(
-                "Review carbon-intensive energy consumption and "
-                "identify reduction opportunities."
-            )
+            recommendations.append("Review carbon-intensive energy consumption and identify reduction opportunities.")
 
     if pd.notna(cost_score):
         if cost_score < 50:
-            recommendations.append(
-                "Prioritize energy-cost reduction interventions."
-            )
+            recommendations.append("Prioritize energy-cost reduction interventions.")
         elif cost_score < 75:
-            recommendations.append(
-                "Review high-cost energy consumption periods."
-            )
+            recommendations.append("Review high-cost energy consumption periods.")
 
     if not recommendations:
-        recommendations.append(
-            "Continue monitoring energy, carbon, and cost performance."
-        )
+        recommendations.append("Continue monitoring energy, carbon, and cost performance.")
 
     return recommendations
 
 
-phase12_building_reports["intervention_recommendations"] = (
-    phase12_building_reports.apply(
-        generate_grounded_recommendation,
-        axis=1
-    )
-)
+# =============================================================================
+# MAIN EXECUTION PIPELINE
+# =============================================================================
 
-print(
-    phase12_building_reports[
-        [building_id_column, "intervention_recommendations"]
-    ].head()
-)
-phase11_xai_report = json_objects["phase11_xai_report"]
+def run_pipeline() -> None:
+    """Execute the Phase-12 reporting pipeline."""
+    if not PROJECT_ROOT.exists():
+        raise FileNotFoundError(f"Authoritative project root not found: {PROJECT_ROOT}")
 
-print(
-    json.dumps(
-        phase11_xai_report,
-        indent=2,
-        default=str
-    )[:15000]
-)
+    initialize_directories()
+    artifacts = get_required_artifacts(PROJECT_ROOT)
+    verify_artifacts(artifacts)
 
-xai_section = {
-    "model": "XGBRegressor",
-    "feature_count": 13,
-    "test_prediction_count": 110,
-    "mae": 6087.625294,
-    "rmse": 8492.059022,
-    "r2": 0.768148,
-    "top_features": [
-        "lag_7",
-        "lag_1",
-        "weekday",
-        "lag_14",
-        "rolling_7",
-        "week_of_year",
-        "is_weekend",
-        "lag_30",
-        "day",
-        "rolling_std_30",
-        "rolling_30",
-        "month",
-        "year",
-    ],
-    "global_shap_top_features": [
-        "lag_7",
-        "lag_1",
-        "weekday",
-        "lag_14",
-        "rolling_7",
-    ],
-}
-
-print(json.dumps(xai_section, indent=2))
-
-forecast_interpretation = {
-    "model": "XGBRegressor",
-    "test_prediction_count": 110,
-    "mae": 6087.625294,
-    "rmse": 8492.059022,
-    "r2": 0.768148,
-    "interpretation": (
-        "The forecasting model explains a substantial portion of the "
-        "observed variation in the Phase-11 test data. Recent historical "
-        "energy patterns are particularly influential, with lag_7 and lag_1 "
-        "among the strongest global explanatory features."
-    ),
-    "feature_interpretation": {
-        "lag_7": "Seven-day historical energy behavior.",
-        "lag_1": "Most recent historical energy behavior.",
-        "weekday": "Day-of-week consumption pattern.",
-        "lag_14": "Energy behavior approximately two weeks earlier.",
-        "rolling_7": "Recent seven-day energy trend."
+    # 1. Load JSON Sources
+    json_sources = {
+        "phase09_kpis": artifacts["phase09_kpis"],
+        "phase09_factor_configuration": artifacts["phase09_factor_configuration"],
+        "phase09_validation": artifacts["phase09_validation"],
+        "phase10_test_results": artifacts["phase10_test_results"],
+        "phase10_final_validation": artifacts["phase10_final_validation"],
+        "phase11_xai_report": artifacts["phase11_xai_report"],
+        "phase11_final_validation": artifacts["phase11_final_validation"],
     }
-}
 
-print(json.dumps(forecast_interpretation, indent=2))
+    json_objects = {}
+    for name, path in json_sources.items():
+        with open(path, "r", encoding="utf-8") as f:
+            json_objects[name] = json.load(f)
 
-forecast_artifact_note = {
-    "status": "DOCUMENTED",
-    "historical_artifact":
-        "processed/forecasting/xgboost_test_forecast.parquet",
-    "historical_shape":
-        "184 rows x 3 columns",
-    "phase11_prediction_rows": 110,
-    "compared_rows": 110,
-    "maximum_absolute_difference": 55979.453125,
-    "mean_absolute_difference": 20064.552734375,
-    "action_taken":
-        "Historical artifact was not overwritten or silently repaired.",
-    "phase12_action":
-        "Phase-12 reports use validated Phase-11 XAI/model interpretation "
-        "and do not replace the historical forecast artifact."
-}
+    with open(artifacts["phase10_knowledge_base"], "r", encoding="utf-8") as f:
+        phase10_kb = json.load(f)
 
-print(json.dumps(forecast_artifact_note, indent=2))
-management_summary = (
-    f"The Sustainable Infrastructure Intelligence Platform currently "
-    f"covers {AUTHORITATIVE_KPIS['buildings']:,} buildings and "
-    f"{AUTHORITATIVE_KPIS['daily_records']:,} daily records. "
-    f"Total recorded energy consumption is "
-    f"{AUTHORITATIVE_KPIS['total_energy_kwh']:,.3f} kWh, with estimated "
-    f"net carbon emissions of "
-    f"{AUTHORITATIVE_KPIS['net_carbon_tco2e']:,.3f} tCO2e and estimated "
-    f"net energy cost of "
-    f"${AUTHORITATIVE_KPIS['net_energy_cost_usd']:,.2f}. "
-    f"The average carbon score is "
-    f"{AUTHORITATIVE_KPIS['average_carbon_score']:.6f}, while the "
-    f"average cost score is "
-    f"{AUTHORITATIVE_KPIS['average_cost_score']:.6f}. "
-    f"These values originate from the repaired and validated Phase-09 "
-    f"sustainability intelligence layer."
-)
-
-print(management_summary)
-from datetime import datetime, timezone
-
-phase12_report = {
-    "project": "Sustainable Infrastructure Intelligence Platform",
-
-    "phase": {
-        "number": 12,
-        "name": "Automated Sustainability Reporting System",
-        "status": "GENERATED"
-    },
-
-    "generated_at_utc":
-        datetime.now(timezone.utc).isoformat(),
-
-    "source_layers": {
-        "phase09": "Validated sustainability intelligence",
-        "phase10": "Validated grounded RAG knowledge base",
-        "phase11": "Validated XAI and forecasting interpretation"
-    },
-
-    "global_kpis": global_kpi_summary,
-
-    "ranking_summary": ranking_summary,
-
-    "management_summary": management_summary,
-
-    "recommendation_method": (
-        "Grounded deterministic recommendations using validated "
-        "Phase-09/Phase-10 sustainability intelligence."
-    ),
-
-    "xai": xai_section,
-
-    "forecast_interpretation": forecast_interpretation,
-
-    "forecast_artifact_note": forecast_artifact_note,
-
-    "building_report": {
-        "building_count":
-            int(phase12_building_reports[building_id_column].nunique()),
-        "source_artifact":
-            str(required_artifacts["phase09_building_intelligence"])
+    # 2. Validate Phase-09 KPIs against Authoritative values
+    phase09_extracted_kpis = {
+        name: find_value(json_objects["phase09_kpis"], keys)
+        for name, keys in KPI_KEY_MAP.items()
     }
-}
 
-PHASE12_JSON_PATH = (
-    PHASE12_REPORT_ROOT /
-    "phase12_sustainability_report.json"
-)
+    validation_results = {}
+    for key, authoritative_value in AUTHORITATIVE_KPIS.items():
+        extracted_value = phase09_extracted_kpis.get(key)
+        if extracted_value is None:
+            validation_results[key] = "FAIL_MISSING"
+            continue
 
-with open(
-    PHASE12_JSON_PATH,
-    "w",
-    encoding="utf-8"
-) as f:
-    json.dump(
-        phase12_report,
-        f,
-        indent=2,
-        default=str
+        if key in ["buildings", "daily_records"]:
+            passed = int(extracted_value) == int(authoritative_value)
+        else:
+            passed = numeric_close(extracted_value, authoritative_value)
+        validation_results[key] = "PASS" if passed else "FAIL"
+
+    if not all(v == "PASS" for v in validation_results.values()):
+        raise ValueError(f"Phase-09 KPI validation failed: {validation_results}")
+    logger.info("Phase-09 KPI source validation: PASS")
+
+    # 3. Load Building Intelligence
+    building_intelligence = pd.read_parquet(artifacts["phase09_building_intelligence"])
+    building_id_candidates = ["building_id", "BuildingID", "building", "id"]
+    building_id_column = next((col for col in building_id_candidates if col in building_intelligence.columns), None)
+
+    if building_id_column is None:
+        raise ValueError("Could not identify building ID column in building intelligence dataset.")
+
+    building_count = building_intelligence[building_id_column].nunique()
+    if building_count != AUTHORITATIVE_KPIS["buildings"]:
+        raise ValueError(f"Building count mismatch: {building_count} != {AUTHORITATIVE_KPIS['buildings']}")
+    logger.info("Building count validation: PASS")
+
+    phase12_building_reports = building_intelligence.copy()
+    phase12_building_reports["intervention_recommendations"] = phase12_building_reports.apply(
+        generate_grounded_recommendation, axis=1
     )
 
-print("Saved:")
-print(PHASE12_JSON_PATH)
+    # 4. Compile Summaries & Metadata
+    global_kpi_summary = {
+        "project": "Sustainable Infrastructure Intelligence Platform",
+        "phase": "Phase-12 Automated Sustainability Reporting",
+        **AUTHORITATIVE_KPIS,
+    }
 
-PHASE12_MD_PATH = (
-    PHASE12_REPORT_ROOT /
-    "phase12_sustainability_report.md"
-)
+    ranking_summary = {}
+    for col in ["overall_rank", "carbon_rank", "cost_rank"]:
+        if col in phase12_building_reports.columns:
+            ranking_summary[col] = {
+                "minimum": phase12_building_reports[col].min(),
+                "maximum": phase12_building_reports[col].max(),
+                "unique_values": phase12_building_reports[col].nunique(),
+            }
 
-markdown_report = f"""# Sustainable Infrastructure Intelligence Platform
+    xai_section = {
+        "model": "XGBRegressor",
+        "feature_count": 13,
+        "test_prediction_count": 110,
+        "mae": 6087.625294,
+        "rmse": 8492.059022,
+        "r2": 0.768148,
+        "top_features": [
+            "lag_7", "lag_1", "weekday", "lag_14", "rolling_7",
+            "week_of_year", "is_weekend", "lag_30", "day",
+            "rolling_std_30", "rolling_30", "month", "year"
+        ],
+        "global_shap_top_features": ["lag_7", "lag_1", "weekday", "lag_14", "rolling_7"],
+    }
+
+    forecast_interpretation = {
+        "model": "XGBRegressor",
+        "test_prediction_count": 110,
+        "mae": 6087.625294,
+        "rmse": 8492.059022,
+        "r2": 0.768148,
+        "interpretation": (
+            "The forecasting model explains a substantial portion of the observed variation "
+            "in the Phase-11 test data. Recent historical energy patterns are particularly "
+            "influential, with lag_7 and lag_1 among the strongest global explanatory features."
+        ),
+        "feature_interpretation": {
+            "lag_7": "Seven-day historical energy behavior.",
+            "lag_1": "Most recent historical energy behavior.",
+            "weekday": "Day-of-week consumption pattern.",
+            "lag_14": "Energy behavior approximately two weeks earlier.",
+            "rolling_7": "Recent seven-day energy trend."
+        }
+    }
+
+    forecast_artifact_note = {
+        "status": "DOCUMENTED",
+        "historical_artifact": "processed/forecasting/xgboost_test_forecast.parquet",
+        "historical_shape": "184 rows x 3 columns",
+        "phase11_prediction_rows": 110,
+        "compared_rows": 110,
+        "maximum_absolute_difference": 55979.453125,
+        "mean_absolute_difference": 20064.552734375,
+        "action_taken": "Historical artifact was not overwritten or silently repaired.",
+        "phase12_action": "Phase-12 reports use validated Phase-11 XAI/model interpretation."
+    }
+
+    management_summary = (
+        f"The Sustainable Infrastructure Intelligence Platform currently covers "
+        f"{AUTHORITATIVE_KPIS['buildings']:,} buildings and {AUTHORITATIVE_KPIS['daily_records']:,} daily records. "
+        f"Total recorded energy consumption is {AUTHORITATIVE_KPIS['total_energy_kwh']:,.3f} kWh, with estimated "
+        f"net carbon emissions of {AUTHORITATIVE_KPIS['net_carbon_tco2e']:,.3f} tCO2e and estimated net energy cost of "
+        f"${AUTHORITATIVE_KPIS['net_energy_cost_usd']:,.2f}. The average carbon score is "
+        f"{AUTHORITATIVE_KPIS['average_carbon_score']:.6f}, while the average cost score is "
+        f"{AUTHORITATIVE_KPIS['average_cost_score']:.6f}."
+    )
+
+    # 5. Generate Master JSON Report
+    phase12_report = {
+        "project": "Sustainable Infrastructure Intelligence Platform",
+        "phase": {"number": 12, "name": "Automated Sustainability Reporting System", "status": "GENERATED"},
+        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "source_layers": {
+            "phase09": "Validated sustainability intelligence",
+            "phase10": "Validated grounded RAG knowledge base",
+            "phase11": "Validated XAI and forecasting interpretation"
+        },
+        "global_kpis": global_kpi_summary,
+        "ranking_summary": ranking_summary,
+        "management_summary": management_summary,
+        "recommendation_method": "Grounded deterministic recommendations using validated Phase-09/10 intelligence.",
+        "xai": xai_section,
+        "forecast_interpretation": forecast_interpretation,
+        "forecast_artifact_note": forecast_artifact_note,
+        "building_report": {
+            "building_count": int(building_count),
+            "source_artifact": str(artifacts["phase09_building_intelligence"])
+        }
+    }
+
+    json_report_path = PHASE12_REPORT_ROOT / "phase12_sustainability_report.json"
+    with open(json_report_path, "w", encoding="utf-8") as f:
+        json.dump(phase12_report, f, indent=2, default=str)
+    logger.info(f"Saved global JSON report: {json_report_path}")
+
+    # 6. Generate Master Markdown Report
+    markdown_report = f"""# Sustainable Infrastructure Intelligence Platform
 
 ## Phase-12 Automated Sustainability Report
 
-**Status:** Generated
-**Source:** Validated Phase-09, Phase-10, and Phase-11 artifacts
+**Status:** Generated  
+**Source:** Validated Phase-09, Phase-10, and Phase-11 artifacts  
 
 ---
 
@@ -715,738 +355,99 @@ markdown_report = f"""# Sustainable Infrastructure Intelligence Platform
 
 ## 3. Sustainability Intelligence
 
-The building-level report data is sourced from the validated Phase-09
-carbon/cost sustainability intelligence.
-
-No Phase-09 carbon, cost, ranking, or score calculations were recreated
-during Phase-12.
+The building-level report data is sourced from validated Phase-09 carbon/cost intelligence.
 
 ---
 
 ## 4. Intervention Recommendations
 
-Recommendations are grounded in the validated sustainability intelligence.
-Phase-12 does not introduce new sustainability measurements or unsupported
-claims.
+Recommendations are grounded in validated sustainability intelligence.
 
 ---
 
 ## 5. Forecasting Interpretation
 
 ### Model
-
 XGBRegressor
 
 ### Performance
-
 - MAE: {forecast_interpretation["mae"]:,.6f}
 - RMSE: {forecast_interpretation["rmse"]:,.6f}
 - R²: {forecast_interpretation["r2"]:.6f}
 - Test predictions: {forecast_interpretation["test_prediction_count"]}
 
-### Important Features
-
-{", ".join(forecast_interpretation["feature_interpretation"].keys())}
-
-Recent historical energy behavior is particularly important to the model,
-with lag-based features and weekday patterns among the strongest
-interpretive signals.
-
 ---
 
 ## 6. XAI Interpretation
-
-The Phase-11 XAI artifacts identify the following important model features:
-
-{", ".join(xai_section["top_features"])}
-
-The global SHAP analysis identified the strongest contributors as:
-
-{", ".join(xai_section["global_shap_top_features"])}
-
-Phase-12 consumes the validated Phase-11 explanations and does not
-recalculate SHAP values.
+Top Features: {", ".join(xai_section["top_features"])}
 
 ---
 
 ## 7. Historical Forecast Artifact Note
-
-The existing historical forecast artifact contains a documented discrepancy
-with the Phase-11 reconstructed model predictions.
-
-The artifact was intentionally not overwritten.
-
 - Historical artifact: `processed/forecasting/xgboost_test_forecast.parquet`
 - Compared rows: 110
-- Maximum absolute difference: 55979.453125
-- Mean absolute difference: 20064.552734375
-
-This discrepancy remains documented for a future dedicated forecasting audit.
-
----
-
-## 8. Source Integrity
-
-Phase-09 remains the authoritative source for global sustainability KPIs.
-
-Phase-10 remains the validated RAG foundation.
-
-Phase-11 remains the validated XAI/model interpretation layer.
-
-Phase-12 adds reporting only.
-
+- Max absolute difference: 55979.453125
 """
 
-with open(
-    PHASE12_MD_PATH,
-    "w",
-    encoding="utf-8"
-) as f:
-    f.write(markdown_report)
-
-print("Saved:")
-print(PHASE12_MD_PATH)
-building_report_count = 0
-
-for _, row in phase12_building_reports.iterrows():
-
-    building_id = row[building_id_column]
-
-    safe_building_id = str(building_id).replace("/", "_")
-
-    report_lines = [
-        "# Building Sustainability Report",
-        "",
-        f"**Building ID:** {building_id}",
-        "",
-        "## Sustainability Intelligence",
-        "",
-    ]
-
-    for column, value in row.items():
-
-        if column == "intervention_recommendations":
-            continue
-
-        if pd.isna(value):
-            value = "N/A"
-
-        report_lines.append(
-            f"- **{column}:** {value}"
-        )
-
-    report_lines.extend([
-        "",
-        "## Intervention Recommendations",
-        ""
-    ])
-
-    recommendations = row["intervention_recommendations"]
-
-    for recommendation in recommendations:
-        report_lines.append(
-            f"- {recommendation}"
-        )
-
-    report_path = (
-        PHASE12_BUILDING_ROOT /
-        f"building_{safe_building_id}.md"
-    )
-
-    with open(
-        report_path,
-        "w",
-        encoding="utf-8"
-    ) as f:
-        f.write("\n".join(report_lines))
-
-    building_report_count += 1
-
-print(
-    f"Building reports generated: {building_report_count}"
-)
-expected_buildings = (
-    phase12_building_reports[building_id_column]
-    .nunique()
-)
-
-actual_building_reports = len(
-    list(PHASE12_BUILDING_ROOT.glob("building_*.md"))
-)
-
-print("Expected building reports:", expected_buildings)
-print("Actual building reports:", actual_building_reports)
-
-if expected_buildings != actual_building_reports:
-    raise ValueError(
-        "Building report completeness validation FAILED."
-    )
-
-print("Building report completeness: PASS")
-report_kpis = phase12_report["global_kpis"]
-
-phase12_kpi_validation = {}
-
-for key, authoritative_value in AUTHORITATIVE_KPIS.items():
-
-    report_value = report_kpis[key]
-
-    if key in ["buildings", "daily_records"]:
-        passed = int(report_value) == int(authoritative_value)
-    else:
-        passed = numeric_close(
-            report_value,
-            authoritative_value
-        )
-
-    phase12_kpi_validation[key] = (
-        "PASS" if passed else "FAIL"
-    )
-
-print("=" * 80)
-print("PHASE-12 KPI VALIDATION")
-print("=" * 80)
-
-for key, result in phase12_kpi_validation.items():
-    print(f"{result:5s} | {key}")
-
-if not all(
-    result == "PASS"
-    for result in phase12_kpi_validation.values()
-):
-    raise ValueError(
-        "Phase-12 KPI validation FAILED."
-    )
-
-print("\nPHASE-12 KPI CONSISTENCY: PASS")
-phase10_kb_count = (
-    len(phase10_kb)
-    if isinstance(phase10_kb, list)
-    else None
-)
-
-phase10_validation = {
-    "knowledge_base_exists":
-        required_artifacts["phase10_knowledge_base"].exists(),
-
-    "expected_knowledge_records":
-        1579,
-
-    "actual_knowledge_records":
-        phase10_kb_count,
-}
-
-if phase10_kb_count is not None:
-    phase10_validation["knowledge_record_count"] = (
-        "PASS"
-        if phase10_kb_count == 1579
-        else "FAIL"
-    )
-else:
-    phase10_validation["knowledge_record_count"] = (
-        "MANUAL_SCHEMA_VALIDATION_REQUIRED"
-    )
-
-print(json.dumps(
-    phase10_validation,
-    indent=2,
-    default=str
-))
-phase11_validation = {
-    "xai_dataset_exists":
-        required_artifacts["phase11_xai_dataset"].exists(),
-
-    "xai_report_exists":
-        required_artifacts["phase11_xai_report"].exists(),
-
-    "final_validation_exists":
-        required_artifacts["phase11_final_validation"].exists(),
-
-    "model_feature_count":
-        13,
-
-    "test_prediction_count":
-        110,
-
-    "mae":
-        6087.625294,
-
-    "rmse":
-        8492.059022,
-
-    "r2":
-        0.768148,
-}
-
-print(json.dumps(
-    phase11_validation,
-    indent=2,
-    default=str
-))
-required_phase12_artifacts = {
-    "main_json_report":
-        PHASE12_JSON_PATH,
-
-    "main_markdown_report":
-        PHASE12_MD_PATH,
-
-    "building_report_directory":
-        PHASE12_BUILDING_ROOT,
-}
-
-report_completeness = {}
-
-for name, path in required_phase12_artifacts.items():
-    report_completeness[name] = (
-        "PASS" if path.exists() else "FAIL"
-    )
-
-print("=" * 80)
-print("PHASE-12 REPORT COMPLETENESS")
-print("=" * 80)
-
-for name, result in report_completeness.items():
-    print(f"{result:5s} | {name}")
-
-phase12_final_validation = {
-    "project":
-        "Sustainable Infrastructure Intelligence Platform",
-
-    "phase":
-        "PHASE-12",
-
-    "phase_name":
-        "Automated Sustainability Reporting System",
-
-    "status":
-        "PASS",
-
-    "source_validation": {
-        "phase09_kpis":
-            all(
-                v == "PASS"
-                for v in validation_results.values()
-            ),
-
-        "phase10_knowledge_base":
-            required_artifacts[
-                "phase10_knowledge_base"
-            ].exists(),
-
-        "phase11_xai_dataset":
-            required_artifacts[
-                "phase11_xai_dataset"
-            ].exists(),
-
-        "phase11_xai_report":
-            required_artifacts[
-                "phase11_xai_report"
-            ].exists(),
-    },
-
-    "kpi_validation":
-        phase12_kpi_validation,
-
-    "building_report_validation": {
-        "expected_buildings":
-            expected_buildings,
-
-        "actual_reports":
-            actual_building_reports,
-
-        "status":
-            "PASS"
-            if expected_buildings == actual_building_reports
-            else "FAIL"
-    },
-
-    "report_completeness":
-        report_completeness,
-
-    "phase10_validation":
-        phase10_validation,
-
-    "phase11_validation":
-        phase11_validation,
-
-    "forecast_artifact_note":
-        forecast_artifact_note,
-
-    "authoritative_kpis":
-        AUTHORITATIVE_KPIS,
-
-    "generated_artifacts": {
-        "json_report":
-            str(PHASE12_JSON_PATH),
-
-        "markdown_report":
-            str(PHASE12_MD_PATH),
-
-        "building_reports":
-            str(PHASE12_BUILDING_ROOT),
+    md_report_path = PHASE12_REPORT_ROOT / "phase12_sustainability_report.md"
+    with open(md_report_path, "w", encoding="utf-8") as f:
+        f.write(markdown_report)
+    logger.info(f"Saved global Markdown report: {md_report_path}")
+
+    # 7. Generate Individual Building Reports
+    building_report_count = 0
+    for _, row in phase12_building_reports.iterrows():
+        building_id = row[building_id_column]
+        safe_building_id = str(building_id).replace("/", "_")
+
+        report_lines = [
+            "# Building Sustainability Report",
+            "",
+            f"**Building ID:** {building_id}",
+            "",
+            "## Sustainability Intelligence",
+            ""
+        ]
+
+        for column, value in row.items():
+            if column == "intervention_recommendations":
+                continue
+            val_str = "N/A" if pd.isna(value) else str(value)
+            report_lines.append(f"- **{column}:** {val_str}")
+
+        report_lines.extend(["", "## Intervention Recommendations", ""])
+        for recommendation in row["intervention_recommendations"]:
+            report_lines.append(f"- {recommendation}")
+
+        building_path = PHASE12_BUILDING_ROOT / f"building_{safe_building_id}.md"
+        with open(building_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(report_lines))
+        building_report_count += 1
+
+    logger.info(f"Generated {building_report_count} building reports successfully.")
+
+    # 8. Validation & Completion Marker
+    expected_buildings = int(building_count)
+    actual_building_reports = len(list(PHASE12_BUILDING_ROOT.glob("building_*.md")))
+
+    if expected_buildings != actual_building_reports:
+        raise ValueError(f"Building report completeness check failed: {actual_building_reports}/{expected_buildings}")
+
+    completion_data = {
+        "phase": "Phase-12",
+        "title": "Automated Sustainability Reporting System",
+        "status": "COMPLETE",
+        "validation_status": "PASS",
+        "completed_at_utc": datetime.now(timezone.utc).isoformat(),
+        "building_reports": {"expected": expected_buildings, "actual": actual_building_reports, "status": "PASS"},
     }
-}
 
-PHASE12_VALIDATION_PATH = (
-    PHASE12_REPORT_ROOT /
-    "phase12_final_validation.json"
-)
+    completion_path = PHASE12_REPORT_ROOT / "phase12_completion.json"
+    with open(completion_path, "w", encoding="utf-8") as f:
+        json.dump(completion_data, f, indent=2)
 
-with open(
-    PHASE12_VALIDATION_PATH,
-    "w",
-    encoding="utf-8"
-) as f:
-    json.dump(
-        phase12_final_validation,
-        f,
-        indent=2,
-        default=str
-    )
+    logger.info("PHASE-12 STATUS: 🟢 COMPLETE — PASS")
 
-print("Saved:")
-print(PHASE12_VALIDATION_PATH)
 
-print("=" * 100)
-print("PHASE-12 FINAL ARTIFACT INVENTORY")
-print("=" * 100)
-
-final_artifacts = [
-    PHASE12_JSON_PATH,
-    PHASE12_MD_PATH,
-    PHASE12_VALIDATION_PATH,
-]
-
-all_final_artifacts_exist = True
-
-for path in final_artifacts:
-
-    exists = path.exists()
-
-    print(
-        f"{'PASS' if exists else 'FAIL'} | {path}"
-    )
-
-    if not exists:
-        all_final_artifacts_exist = False
-
-
-print("\nBuilding reports:")
-print(
-    f"Expected: {expected_buildings}"
-)
-print(
-    f"Actual:   {actual_building_reports}"
-)
-
-if expected_buildings != actual_building_reports:
-    all_final_artifacts_exist = False
-
-
-if not all_final_artifacts_exist:
-    raise RuntimeError(
-        "PHASE-12 FINAL VALIDATION FAILED."
-    )
-
-print("\n" + "=" * 100)
-print("PHASE-12 STATUS: 🟢 COMPLETE — PASS")
-print("=" * 100)
-import json
-
-PHASE10_KB_PATH = (
-    PROJECT_ROOT /
-    "processed/phase10_rag/knowledge_base/sustainability_knowledge.json"
-)
-
-with open(PHASE10_KB_PATH, "r", encoding="utf-8") as f:
-    phase10_kb = json.load(f)
-
-print("=" * 90)
-print("PHASE-10 KNOWLEDGE BASE — RECOMMENDATION AUDIT")
-print("=" * 90)
-
-if isinstance(phase10_kb, list):
-
-    print("Records:", len(phase10_kb))
-
-    recommendation_keywords = [
-        "recommend",
-        "recommendation",
-        "intervention",
-        "action",
-        "improve",
-        "reduce",
-        "sustainability"
-    ]
-
-    matching_records = []
-
-    for record in phase10_kb:
-
-        text = json.dumps(
-            record,
-            default=str
-        ).lower()
-
-        if any(
-            keyword in text
-            for keyword in recommendation_keywords
-        ):
-            matching_records.append(record)
-
-    print(
-        "Records containing recommendation/intervention-related "
-        f"content: {len(matching_records)}"
-    )
-
-    print("\nSample matching records:\n")
-
-    for record in matching_records[:10]:
-        print(
-            json.dumps(
-                record,
-                indent=2,
-                default=str
-            )[:4000]
-        )
-        print("\n" + "-" * 90)
-
-else:
-    print("Unexpected knowledge-base structure:")
-    print(type(phase10_kb))
-
-PHASE11_XAI_PATH = (
-    PROJECT_ROOT /
-    "reports/phase11_xai/phase11_xai_report.json"
-)
-
-with open(PHASE11_XAI_PATH, "r", encoding="utf-8") as f:
-    phase11_actual_xai = json.load(f)
-
-print("=" * 90)
-print("PHASE-11 XAI REPORT — ACTUAL SOURCE AUDIT")
-print("=" * 90)
-
-print(
-    json.dumps(
-        phase11_actual_xai,
-        indent=2,
-        default=str
-    )[:20000]
-)
-
-# ============================================================
-# PHASE-12 — RECOMMENDATION PROVENANCE AUDIT
-# No recomputation of sustainability intelligence
-# ============================================================
-
-import json
-from pathlib import Path
-
-PROJECT_ROOT = Path("/content/drive/MyDrive/GitHub_Project_01")
-
-KB_PATH = (
-    PROJECT_ROOT
-    / "processed/phase10_rag/knowledge_base/sustainability_knowledge.json"
-)
-
-PHASE12_JSON = (
-    PROJECT_ROOT
-    / "reports/phase12_reporting/phase12_sustainability_report.json"
-)
-
-print("=" * 90)
-print("PHASE-12 RECOMMENDATION PROVENANCE AUDIT")
-print("=" * 90)
-
-# ------------------------------------------------------------
-# Load Phase-10 knowledge base
-# ------------------------------------------------------------
-
-with open(KB_PATH, "r", encoding="utf-8") as f:
-    kb = json.load(f)
-
-records = kb if isinstance(kb, list) else kb.get("records", [])
-
-print("Phase-10 knowledge records:", len(records))
-
-# ------------------------------------------------------------
-# Inspect recommendation/intervention fields structurally
-# ------------------------------------------------------------
-
-recommendation_records = []
-
-for record in records:
-    content = record.get("content", {})
-
-    if not isinstance(content, dict):
-        continue
-
-    matching_keys = [
-        key for key in content.keys()
-        if any(
-            term in key.lower()
-            for term in [
-                "recommend",
-                "intervention",
-                "action",
-                "priority",
-                "improvement"
-            ]
-        )
-    ]
-
-    if matching_keys:
-        recommendation_records.append({
-            "building_id": content.get("building_id"),
-            "title": record.get("metadata", {}).get("title"),
-            "matching_keys": matching_keys,
-            "values": {
-                key: content.get(key)
-                for key in matching_keys
-            }
-        })
-
-print(
-    "Records containing recommendation/intervention/action fields:",
-    len(recommendation_records)
-)
-
-for item in recommendation_records[:10]:
-    print("\n", item)
-
-# ------------------------------------------------------------
-# Inspect Phase-12 report structure
-# ------------------------------------------------------------
-
-if PHASE12_JSON.exists():
-
-    with open(PHASE12_JSON, "r", encoding="utf-8") as f:
-        phase12 = json.load(f)
-
-    print("\nPhase-12 top-level sections:")
-    if isinstance(phase12, dict):
-        print(list(phase12.keys()))
-
-    # Search recursively for recommendation-related keys
-    found_phase12 = []
-
-    def search_keys(obj, path="root"):
-        if isinstance(obj, dict):
-            for key, value in obj.items():
-
-                if any(
-                    term in key.lower()
-                    for term in [
-                        "recommend",
-                        "intervention",
-                        "action",
-                        "priority"
-                    ]
-                ):
-                    found_phase12.append((path, key, value))
-
-                search_keys(value, f"{path}.{key}")
-
-        elif isinstance(obj, list):
-            for i, value in enumerate(obj):
-                search_keys(value, f"{path}[{i}]")
-
-    search_keys(phase12)
-
-    print("\nRecommendation-related Phase-12 fields found:")
-    print(len(found_phase12))
-
-    for path, key, value in found_phase12[:20]:
-        print("\nPATH:", path)
-        print("KEY :", key)
-
-        if isinstance(value, list):
-            print("COUNT:", len(value))
-            print("SAMPLE:", value[:3])
-        else:
-            print("VALUE:", value)
-
-else:
-    print("\nPhase-12 JSON report not found.")
-
-print("\n" + "=" * 90)
-print("RECOMMENDATION PROVENANCE AUDIT COMPLETE")
-print("=" * 90)
-
-# ============================================================
-# PHASE-12 — FINAL COMPLETION MARKER
-# ============================================================
-
-import json
-from pathlib import Path
-from datetime import datetime, timezone
-
-PROJECT_ROOT = Path("/content/drive/MyDrive/GitHub_Project_01")
-
-REPORT_DIR = PROJECT_ROOT / "reports" / "phase12_reporting"
-REPORT_DIR.mkdir(parents=True, exist_ok=True)
-
-completion = {
-    "phase": "Phase-12",
-    "title": "Automated Sustainability Reporting System",
-    "status": "COMPLETE",
-    "validation_status": "PASS",
-    "completed_at_utc": datetime.now(timezone.utc).isoformat(),
-
-    "source_layers": {
-        "phase09": "validated sustainability intelligence",
-        "phase10": "validated grounded RAG knowledge base",
-        "phase11": "validated XAI and forecasting interpretation"
-    },
-
-    "outputs": {
-        "global_report_json": str(
-            REPORT_DIR / "phase12_sustainability_report.json"
-        ),
-        "global_report_markdown": str(
-            REPORT_DIR / "phase12_sustainability_report.md"
-        ),
-        "final_validation": str(
-            REPORT_DIR / "phase12_final_validation.json"
-        ),
-        "building_reports": str(
-            REPORT_DIR / "building_reports"
-        )
-    },
-
-    "building_reports": {
-        "expected": 1578,
-        "actual": 1578,
-        "status": "PASS"
-    },
-
-    "recommendation_provenance": {
-        "phase10_knowledge_records": 1579,
-        "phase10_explicit_recommendation_fields": 0,
-        "method": (
-            "Grounded deterministic recommendations using "
-            "validated Phase-09/Phase-10 sustainability intelligence."
-        ),
-        "status": "PASS"
-    },
-
-    "numerical_consistency": "PASS",
-    "report_completeness": "PASS",
-    "artifact_validation": "PASS",
-
-    "next_phase": "Phase-13 — Dashboard Development"
-}
-
-completion_path = REPORT_DIR / "phase12_completion.json"
-
-with open(completion_path, "w", encoding="utf-8") as f:
-    json.dump(completion, f, indent=2)
-
-print("=" * 90)
-print("PHASE-12 FINAL COMPLETION")
-print("=" * 90)
-print("Status: PASS")
-print(f"Saved: {completion_path}")
-print("Next phase: Phase-13 — Dashboard Development")
-print("=" * 90)
+if __name__ == "__main__":
+    run_pipeline()
